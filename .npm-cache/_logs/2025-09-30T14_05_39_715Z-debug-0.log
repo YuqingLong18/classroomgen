@@ -1,0 +1,49 @@
+0 verbose cli /usr/local/bin/node /usr/local/bin/npm
+1 info using npm@10.9.3
+2 info using node@v22.20.0
+3 silly config load:file:/usr/local/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/ylong/.npmrc
+5 silly config load:file:/usr/local/etc/npmrc
+6 verbose title npm config set cache .npm-cache
+7 verbose argv "config" "set" "cache" ".npm-cache" "--global"
+8 verbose logfile logs-max:10 dir:/Users/ylong/Documents/classroomgen/.npm-cache/_logs/2025-09-30T14_05_39_715Z-
+9 verbose logfile /Users/ylong/Documents/classroomgen/.npm-cache/_logs/2025-09-30T14_05_39_715Z-debug-0.log
+10 info config set "cache" ".npm-cache"
+11 silly logfile done cleaning log files
+12 verbose stack Error: EPERM: operation not permitted, mkdir '/usr/local/etc'
+12 verbose stack     at async mkdir (node:internal/fs/promises:860:10)
+12 verbose stack     at async Config.save (/usr/local/lib/node_modules/npm/node_modules/@npmcli/config/lib/index.js:746:5)
+12 verbose stack     at async Config.set (/usr/local/lib/node_modules/npm/lib/commands/config.js:206:5)
+12 verbose stack     at async Config.exec (/usr/local/lib/node_modules/npm/lib/commands/config.js:151:9)
+12 verbose stack     at async Npm.exec (/usr/local/lib/node_modules/npm/lib/npm.js:207:9)
+12 verbose stack     at async module.exports (/usr/local/lib/node_modules/npm/lib/cli/entry.js:74:5)
+13 error code EPERM
+14 error syscall mkdir
+15 error path /usr/local/etc
+16 error errno -1
+17 error Error: EPERM: operation not permitted, mkdir '/usr/local/etc'
+17 error     at async mkdir (node:internal/fs/promises:860:10)
+17 error     at async Config.save (/usr/local/lib/node_modules/npm/node_modules/@npmcli/config/lib/index.js:746:5)
+17 error     at async Config.set (/usr/local/lib/node_modules/npm/lib/commands/config.js:206:5)
+17 error     at async Config.exec (/usr/local/lib/node_modules/npm/lib/commands/config.js:151:9)
+17 error     at async Npm.exec (/usr/local/lib/node_modules/npm/lib/npm.js:207:9)
+17 error     at async module.exports (/usr/local/lib/node_modules/npm/lib/cli/entry.js:74:5) {
+17 error   errno: -1,
+17 error   code: 'EPERM',
+17 error   syscall: 'mkdir',
+17 error   path: '/usr/local/etc'
+17 error }
+18 error
+18 error The operation was rejected by your operating system.
+18 error It is likely you do not have the permissions to access this file as the current user
+18 error
+18 error If you believe this might be a permissions issue, please double-check the
+18 error permissions of the file and its containing directories, or try running
+18 error the command again as root/Administrator.
+19 verbose cwd /Users/ylong/Documents/classroomgen
+20 verbose os Darwin 24.5.0
+21 verbose node v22.20.0
+22 verbose npm  v10.9.3
+23 verbose exit -1
+24 verbose code -1
+25 error A complete log of this run can be found in: /Users/ylong/Documents/classroomgen/.npm-cache/_logs/2025-09-30T14_05_39_715Z-debug-0.log

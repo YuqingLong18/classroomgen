@@ -1,0 +1,149 @@
+generator client {
+    provider      = "prisma-client-js"
+    binaryTargets = ["native", "rhel-openssl-1.1.x", "darwin-arm64"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum PromptRole {
+  STUDENT
+  TEACHER
+}
+
+enum SubmissionStatus {
+  PENDING
+  SUCCESS
+  ERROR
+}
+
+enum ChatSender {
+  STUDENT
+  AI
+}
+
+model Teacher {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  passwordHash String
+  displayName  String?
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+}
+
+model Session {
+  id              String             @id @default(cuid())
+  classroomCode   String             @unique
+  isActive        Boolean            @default(true)
+  chatEnabled     Boolean            @default(true)
+  maxStudentEdits Int                @default(3)
+  createdAt       DateTime           @default(now())
+  endedAt         DateTime?
+  teacher         Teacher            @relation(fields: [teacherId], references: [id])
+  teacherId       String
+  promptEntries   PromptSubmission[]
+  students        Student[]
+  chatThreads     ChatThread[]
+
+  @@index([teacherId])
+}
+
+model PromptSubmission {
+  id                 String              @id @default(cuid())
+  session            Session             @relation(fields: [sessionId], references: [id])
+  sessionId          String
+  prompt             String
+  role               PromptRole
+  createdAt          DateTime            @default(now())
+  student            Student?            @relation(fields: [studentId], references: [id])
+  studentId          String?
+  rootSubmission     PromptSubmission?   @relation("RootRelation", fields: [rootSubmissionId], references: [id])
+  rootSubmissionId   String?
+  refinements        PromptSubmission[]  @relation("RootRelation")
+  parentSubmission   PromptSubmission?   @relation("ParentRelation", fields: [parentSubmissionId], references: [id])
+  parentSubmissionId String?
+  childSubmissions   PromptSubmission[]  @relation("ParentRelation")
+  revisionIndex      Int                 @default(0)
+  status             SubmissionStatus    @default(PENDING)
+  imageData          String?
+  imageMimeType      String?
+  errorMessage       String?
+  isShared           Boolean             @default(false)
+  likes              SubmissionLike[]
+  comments           SubmissionComment[]
+
+  @@index([sessionId])
+  @@index([rootSubmissionId])
+  @@index([studentId])
+}
+
+model Student {
+  id           String             @id @default(cuid())
+  username     String
+  passwordHash String
+  createdAt    DateTime           @default(now())
+  session      Session            @relation(fields: [sessionId], references: [id])
+  sessionId    String
+  submissions  PromptSubmission[]
+  chatThreads  ChatThread[]
+  chatMessages ChatMessage[]
+  submissionLikes   SubmissionLike[]
+  submissionComments SubmissionComment[]
+
+  @@unique([sessionId, username])
+}
+
+model ChatThread {
+  id         String        @id @default(cuid())
+  title      String
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  session    Session       @relation(fields: [sessionId], references: [id])
+  sessionId  String
+  student    Student       @relation(fields: [studentId], references: [id])
+  studentId  String
+  messages   ChatMessage[]
+
+  @@index([sessionId])
+  @@index([studentId])
+}
+
+model ChatMessage {
+  id        String      @id @default(cuid())
+  content   String
+  sender    ChatSender
+  createdAt DateTime    @default(now())
+  thread    ChatThread  @relation(fields: [threadId], references: [id])
+  threadId  String
+  student   Student?    @relation(fields: [studentId], references: [id])
+  studentId String?
+
+  @@index([threadId])
+}
+
+model SubmissionLike {
+  id           String           @id @default(cuid())
+  submission   PromptSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  submissionId String
+  student      Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId    String
+  createdAt    DateTime         @default(now())
+
+  @@unique([submissionId, studentId])
+  @@index([studentId])
+}
+
+model SubmissionComment {
+  id           String           @id @default(cuid())
+  submission   PromptSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  submissionId String
+  student      Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId    String
+  content      String
+  createdAt    DateTime         @default(now())
+
+  @@index([submissionId])
+  @@index([studentId])
+}
