@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { getSessionFromCookies } from '@/lib/session';
 import { SubmissionStatus } from '@prisma/client';
+import { invalidateImagesCache } from '../route';
 
 const bodySchema = z.object({
   submissionId: z.string().cuid(),
@@ -43,6 +44,9 @@ export async function POST(request: Request) {
       data: { isShared: share },
       select: { id: true, isShared: true },
     });
+
+    // Invalidate cache
+    invalidateImagesCache(sessionId);
 
     return NextResponse.json({ submissionId: updated.id, isShared: updated.isShared });
   } catch (error) {

@@ -24,7 +24,7 @@ interface ActivitySubmission {
   revisionIndex: number;
   parentSubmissionId: string | null;
   rootSubmissionId: string | null;
-  imageData: string | null;
+  imageData?: string | null; // Optional - now served via separate endpoint
   imageMimeType: string | null;
   errorMessage: string | null;
   isShared: boolean;
@@ -46,7 +46,7 @@ interface GallerySubmission {
   createdAt: string;
   status: 'PENDING' | 'SUCCESS' | 'ERROR';
   revisionIndex: number;
-  imageData: string | null;
+  imageData?: string | null; // Optional - now served via separate endpoint
   imageMimeType: string | null;
   isShared: boolean;
   studentUsername: string | null;
@@ -1061,12 +1061,12 @@ export default function TeacherDashboard() {
           ) : (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {gallery
-                .filter((entry) => entry.status === 'SUCCESS' && entry.imageData)
+                .filter((entry) => entry.status === 'SUCCESS')
                 .map((entry) => (
                   <figure key={entry.id} className="bg-[var(--color-surface)]/80 border border-[var(--color-border)]/70 rounded-2xl overflow-hidden">
                     <div className="relative w-full aspect-[4/3]">
                       <Image
-                        src={`data:${entry.imageMimeType ?? 'image/png'};base64,${entry.imageData}`}
+                        src={`/api/images/${entry.id}/image`}
                         alt={entry.prompt}
                         fill
                         sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"

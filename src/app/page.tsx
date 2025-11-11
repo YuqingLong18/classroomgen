@@ -35,7 +35,7 @@ interface Submission {
   prompt: string;
   createdAt: string;
   status: 'PENDING' | 'SUCCESS' | 'ERROR';
-  imageData: string | null;
+  imageData?: string | null; // Optional - now served via separate endpoint
   imageMimeType: string | null;
   revisionIndex: number;
   rootSubmissionId: string | null;
@@ -73,13 +73,13 @@ function toDisplayTime(iso: string) {
 }
 
 function downloadImage(submission: Submission) {
-  if (!submission.imageData) return;
-  const mimeType = submission.imageMimeType || 'image/png';
-  const prefix = mimeType.split('/')[1] || 'png';
+  if (submission.status !== 'SUCCESS') return;
+  const imageUrl = `/api/images/${submission.id}/image`;
   const link = document.createElement('a');
-  link.href = `data:${mimeType};base64,${submission.imageData}`;
+  link.href = imageUrl;
   const revisionLabel = submission.revisionIndex > 0 ? `-rev${submission.revisionIndex}` : '';
-  link.download = `classroom-image-${submission.id}${revisionLabel}.${prefix}`;
+  const extension = submission.imageMimeType?.split('/')[1] || 'png';
+  link.download = `classroom-image-${submission.id}${revisionLabel}.${extension}`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -280,19 +280,64 @@ export default function StudentHome() {
         if (!res.ok) {
           const error = await res.json().catch(() => ({ message: 'Image generation failed.' }));
           setGenerateError(error.message ?? 'Image generation failed.');
+          setGeneratingId(null);
+          return;
+        }
+
+        const data = await res.json();
+        const submissionId = data.submission?.id;
+        const jobId = data.jobId;
+
+        if (!submissionId) {
+          setGenerateError('Failed to start image generation.');
+          setGeneratingId(null);
           return;
         }
 
         setPrompt('');
-        await loadSubmissions();
+        
+        // Poll for job completion
+        const pollInterval = setInterval(async () => {
+          try {
+            const statusRes = await fetch(`/api/images/generate?submissionId=${submissionId}`, {
+              credentials: 'include',
+            });
+            
+            if (statusRes.ok) {
+              const statusData = await statusRes.json();
+              
+              if (statusData.status === 'completed') {
+                clearInterval(pollInterval);
+                setGeneratingId(null);
+                await loadSubmissions();
+              } else if (statusData.status === 'failed') {
+                clearInterval(pollInterval);
+                setGeneratingId(null);
+                setGenerateError(statusData.error || 'Image generation failed.');
+                await loadSubmissions();
+              }
+            }
+          } catch (error) {
+            console.error('Failed to check generation status', error);
+          }
+        }, 2000); // Poll every 2 seconds
+
+        // Timeout after 60 seconds
+        setTimeout(() => {
+          clearInterval(pollInterval);
+          if (generatingId === (parentSubmissionId ?? 'new')) {
+            setGeneratingId(null);
+            setGenerateError('Image generation is taking longer than expected. Please refresh the page.');
+            void loadSubmissions();
+          }
+        }, 60000);
       } catch (error) {
         console.error('Image generation failed', error);
         setGenerateError('Something went wrong while generating the image.');
-      } finally {
         setGeneratingId(null);
       }
     },
-    [prompt, loadSubmissions],
+    [prompt, loadSubmissions, generatingId],
   );
 
   const handleShareToggle = useCallback(
@@ -659,20 +704,26 @@ export default function StudentHome() {
                       {chain.map((submission) => (
                         <div key={submission.id} className="space-y-3">
                         <div className="relative overflow-hidden rounded-xl border border-[var(--color-border)]">
-                          {submission.imageData ? (
+                          {submission.status === 'SUCCESS' ? (
                             <div className="relative aspect-[4/3] w-full">
                               <Image
-                                src={`data:${submission.imageMimeType ?? 'image/png'};base64,${submission.imageData}`}
+                                src={`/api/images/${submission.id}/image`}
                                 alt={submission.prompt}
                                 fill
                                 sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
-                                unoptimized
                                 className="object-cover"
                               />
                             </div>
+                          ) : submission.status === 'PENDING' ? (
+                            <div className="h-64 flex items-center justify-center text-[var(--color-muted-foreground)] bg-[var(--color-surface-subtle)]">
+                              <div className="text-center space-y-2">
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--color-accent)] mx-auto"></div>
+                                <p className="text-sm">Generating image...</p>
+                              </div>
+                            </div>
                           ) : (
                             <div className="h-64 flex items-center justify-center text-[var(--color-muted-foreground)]">
-                              Image unavailable
+                              {submission.errorMessage ?? 'Image unavailable'}
                             </div>
                           )}
                           <div className="absolute top-3 right-3 text-xs bg-[var(--color-surface)]/80 px-3 py-1 rounded-full text-[var(--color-muted)]">

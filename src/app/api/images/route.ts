@@ -1,13 +1,30 @@
-import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { getSessionFromCookies } from '@/lib/session';
+import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
+import { getSessionFromCookies } from '@/lib/session';
+import { prisma } from '@/lib/prisma';
+import { getCache, setCache, getImagesCacheKey, clearCache } from '@/lib/cache';
+import { rateLimitMiddleware } from '@/lib/rate-limit';
 
-export async function GET() {
+async function handler(request: NextRequest) {
   const { sessionId, role, studentId } = await getSessionFromCookies();
 
   if (!sessionId) {
     return NextResponse.json({ submissions: [] });
+  }
+
+  // Check cache first
+  const url = new URL(request.url);
+  const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+  const cacheKey = getImagesCacheKey(sessionId, role || 'unknown', studentId || undefined, page);
+  const cached = getCache<{ submissions: unknown[]; role: string; pagination: unknown }>(cacheKey);
+  
+  if (cached) {
+    return NextResponse.json(cached, {
+      headers: {
+        'Cache-Control': 'private, max-age=5, stale-while-revalidate=10',
+        'X-Cache': 'HIT',
+      },
+    });
   }
 
   const session = await prisma.session.findUnique({
@@ -31,18 +48,24 @@ export async function GET() {
     where.OR = [
       { isShared: true },
       studentId ? { studentId } : undefined,
-    ].filter(Boolean) as Prisma.PromptSubmissionWhereInput[];
+    ].filter(Boolean) as Array<{ isShared: boolean } | { studentId: string }>;
   }
+
+  const limit = Math.min(100, Math.max(10, parseInt(url.searchParams.get('limit') || '50', 10)));
+  const skip = (page - 1) * limit;
+
+  const totalCount = await prisma.promptSubmission.count({ where });
 
   const submissions = await prisma.promptSubmission.findMany({
     where,
     orderBy: { createdAt: 'desc' },
+    take: limit,
+    skip,
     select: {
       id: true,
       prompt: true,
       createdAt: true,
       status: true,
-      imageData: true,
       imageMimeType: true,
       revisionIndex: true,
       rootSubmissionId: true,
@@ -121,5 +144,32 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ submissions: enriched, role });
+  const result = {
+    submissions: enriched,
+    role,
+    pagination: {
+      page,
+      limit,
+      total: totalCount,
+      totalPages: Math.ceil(totalCount / limit),
+      hasMore: skip + limit < totalCount,
+    },
+  };
+
+  // Cache for 5 seconds
+  setCache(cacheKey, result, 5000);
+
+  return NextResponse.json(result, {
+    headers: {
+      'Cache-Control': 'private, max-age=5, stale-while-revalidate=10',
+      'X-Cache': 'MISS',
+    },
+  });
 }
+
+// Invalidate cache when images are updated
+export function invalidateImagesCache(sessionId: string) {
+  clearCache(`images:${sessionId}`);
+}
+
+export const GET = rateLimitMiddleware(handler);

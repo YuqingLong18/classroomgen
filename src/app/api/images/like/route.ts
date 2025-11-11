@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { SubmissionStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getSessionFromCookies } from '@/lib/session';
+import { invalidateImagesCache } from '../route';
 
 const bodySchema = z.object({
   submissionId: z.string().cuid(),
@@ -72,6 +73,9 @@ export async function POST(request: Request) {
     }
 
     const likeCount = await prisma.submissionLike.count({ where: { submissionId } });
+
+    // Invalidate cache
+    invalidateImagesCache(sessionId);
 
     return NextResponse.json({ submissionId, likeCount, liked: like });
   } catch (error) {

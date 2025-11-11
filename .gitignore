@@ -44,3 +44,9 @@ next-env.d.ts
 node_modules
 .npm-cache
 npm-debug.log
+
+# Ignore Prisma development database
+prisma/prisma/dev.db
+
+# You might also want to ignore all .db files in that folder
+# prisma/prisma/*.db
