@@ -27,10 +27,14 @@ export async function GET() {
 
   const where: Prisma.PromptSubmissionWhereInput = { sessionId };
   if (role !== 'teacher') {
-    where.status = 'SUCCESS';
+    // Students can see:
+    // 1. Their own submissions (including PENDING ones)
+    // 2. Shared submissions that are SUCCESS
     where.OR = [
-      { isShared: true },
+      // Own submissions - include PENDING, SUCCESS, and ERROR
       studentId ? { studentId } : undefined,
+      // Shared submissions - only SUCCESS
+      { isShared: true, status: 'SUCCESS' },
     ].filter(Boolean) as Prisma.PromptSubmissionWhereInput[];
   }
 

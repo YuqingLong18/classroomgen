@@ -192,6 +192,27 @@ export default function StudentHome() {
     }
   }, [session?.id, session?.role, loadSubmissions]);
 
+  // Poll for pending submissions to update them when generation completes
+  useEffect(() => {
+    if (!session?.id || session.role !== 'student') return;
+
+    // Check if there are any pending submissions
+    const hasPendingSubmissions = submissions.some(
+      (sub) => sub.status === 'PENDING' && sub.ownedByCurrentUser
+    );
+
+    if (!hasPendingSubmissions) return;
+
+    // Poll every 2 seconds for pending submissions
+    const interval = window.setInterval(() => {
+      void loadSubmissions();
+    }, 2000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [session?.id, session?.role, submissions, loadSubmissions]);
+
   const handleLogin = useCallback(async () => {
     if (classroomCode.length !== 8) {
       setAuthError('Enter the 8-digit classroom code from your teacher.');
@@ -284,6 +305,8 @@ export default function StudentHome() {
         }
 
         setPrompt('');
+        // Reload submissions to show the new PENDING submission
+        // Polling will automatically update it when generation completes
         await loadSubmissions();
       } catch (error) {
         console.error('Image generation failed', error);
@@ -659,7 +682,12 @@ export default function StudentHome() {
                       {chain.map((submission) => (
                         <div key={submission.id} className="space-y-3">
                         <div className="relative overflow-hidden rounded-xl border border-[var(--color-border)]">
-                          {submission.imageData ? (
+                          {submission.status === 'PENDING' ? (
+                            <div className="h-64 flex flex-col items-center justify-center gap-3 text-[var(--color-muted-foreground)]">
+                              <div className="animate-spin rounded-full h-8 w-8 border-2 border-[var(--color-accent)] border-t-transparent"></div>
+                              <span className="text-sm">Generating image...</span>
+                            </div>
+                          ) : submission.imageData ? (
                             <div className="relative aspect-[4/3] w-full">
                               <Image
                                 src={`data:${submission.imageMimeType ?? 'image/png'};base64,${submission.imageData}`}
@@ -672,7 +700,11 @@ export default function StudentHome() {
                             </div>
                           ) : (
                             <div className="h-64 flex items-center justify-center text-[var(--color-muted-foreground)]">
-                              Image unavailable
+                              {submission.status === 'ERROR' ? (
+                                <span className="text-sm text-rose-300">Error: {submission.errorMessage ?? 'Image generation failed'}</span>
+                              ) : (
+                                <span className="text-sm">Image unavailable</span>
+                              )}
                             </div>
                           )}
                           <div className="absolute top-3 right-3 text-xs bg-[var(--color-surface)]/80 px-3 py-1 rounded-full text-[var(--color-muted)]">
