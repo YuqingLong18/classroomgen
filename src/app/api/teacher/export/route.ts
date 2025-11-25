@@ -29,7 +29,19 @@ export async function GET() {
       include: {
         promptEntries: {
           orderBy: { createdAt: 'asc' },
-          include: {
+          select: {
+            id: true,
+            prompt: true,
+            createdAt: true,
+            status: true,
+            revisionIndex: true,
+            rootSubmissionId: true,
+            parentSubmissionId: true,
+            imageData: true,
+            imageMimeType: true,
+            errorMessage: true,
+            isShared: true,
+            studentId: true,
             student: {
               select: {
                 id: true,
@@ -222,6 +234,28 @@ export async function GET() {
                 doc.fontSize(9).fillColor('#666666');
                 doc.text(`Created: ${formatDate(submission.createdAt)}`, { indent: 30 });
                 
+                // Add image if available
+                if (submission.imageData && submission.status === 'SUCCESS') {
+                  try {
+                    const imageBuffer = Buffer.from(submission.imageData, 'base64');
+                    const imageWidth = 200;
+                    const imageHeight = 150;
+                    const x = doc.page.margins.left + 30;
+                    const y = doc.y;
+                    
+                    doc.image(imageBuffer, x, y, {
+                      width: imageWidth,
+                      height: imageHeight,
+                      fit: [imageWidth, imageHeight],
+                    });
+                    doc.y = y + imageHeight + 10;
+                  } catch (imageError) {
+                    console.error('Failed to embed image in PDF:', imageError);
+                    doc.fontSize(9).fillColor('#666666');
+                    doc.text('[Image could not be embedded]', { indent: 30 });
+                  }
+                }
+                
                 if (submission.status === 'ERROR') {
                   doc.fontSize(9).fillColor('#DC2626');
                   doc.text(`Status: ERROR - ${submission.errorMessage || 'Generation failed'}`, { indent: 30 });
@@ -245,6 +279,28 @@ export async function GET() {
                 doc.fontSize(9).fillColor('#666666');
                 doc.text(`Created: ${formatDate(submission.createdAt)}`, { indent: 40 });
                 
+                // Add image if available
+                if (submission.imageData && submission.status === 'SUCCESS') {
+                  try {
+                    const imageBuffer = Buffer.from(submission.imageData, 'base64');
+                    const imageWidth = 180;
+                    const imageHeight = 135;
+                    const x = doc.page.margins.left + 40;
+                    const y = doc.y;
+                    
+                    doc.image(imageBuffer, x, y, {
+                      width: imageWidth,
+                      height: imageHeight,
+                      fit: [imageWidth, imageHeight],
+                    });
+                    doc.y = y + imageHeight + 10;
+                  } catch (imageError) {
+                    console.error('Failed to embed image in PDF:', imageError);
+                    doc.fontSize(9).fillColor('#666666');
+                    doc.text('[Image could not be embedded]', { indent: 40 });
+                  }
+                }
+                
                 if (submission.status === 'ERROR') {
                   doc.fontSize(9).fillColor('#DC2626');
                   doc.text(`Status: ERROR - ${submission.errorMessage || 'Generation failed'}`, { indent: 40 });
@@ -256,7 +312,7 @@ export async function GET() {
                   doc.text('Status: SUCCESS', { indent: 40 });
                 }
               }
-              doc.moveDown(0.3);
+              doc.moveDown(0.5);
             }
 
             doc.moveDown();
