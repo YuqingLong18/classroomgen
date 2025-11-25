@@ -21,10 +21,30 @@ function randomCode(length = 6) {
 
 export async function POST(request: Request) {
   try {
-    const { sessionId, role } = await getSessionFromCookies();
+    let sessionId: string | undefined;
+    let role: string | undefined;
+    
+    try {
+      const cookies = await getSessionFromCookies();
+      sessionId = cookies.sessionId;
+      role = cookies.role;
+    } catch (cookieError) {
+      console.error('Error reading cookies:', cookieError);
+      return NextResponse.json({ message: 'Session error. Please refresh and try again.' }, { status: 401 });
+    }
 
     if (!sessionId || role !== 'teacher') {
       return NextResponse.json({ message: 'Teacher access only.' }, { status: 403 });
+    }
+
+    // Verify session exists and is active
+    const session = await prisma.session.findUnique({
+      where: { id: sessionId },
+      select: { id: true, isActive: true },
+    });
+
+    if (!session || !session.isActive) {
+      return NextResponse.json({ message: 'Session not found or inactive.' }, { status: 403 });
     }
 
     const json = await request.json();
@@ -38,25 +58,35 @@ export async function POST(request: Request) {
 
     const credentials: Array<{ username: string; password: string }> = [];
 
-    await prisma.$transaction(async (tx) => {
-      for (let i = 0; i < count; i += 1) {
-        let username = randomCode();
-        while (usedUsernames.has(username.toLowerCase())) {
-          username = randomCode();
+    try {
+      await prisma.$transaction(async (tx) => {
+        for (let i = 0; i < count; i += 1) {
+          let username = randomCode();
+          let attempts = 0;
+          while (usedUsernames.has(username.toLowerCase()) && attempts < 100) {
+            username = randomCode();
+            attempts++;
+          }
+          if (attempts >= 100) {
+            throw new Error('Unable to generate unique username after 100 attempts');
+          }
+          usedUsernames.add(username.toLowerCase());
+          const password = randomCode();
+          const passwordHash = await hashPassword(password);
+          await tx.student.create({
+            data: {
+              username,
+              passwordHash,
+              sessionId,
+            },
+          });
+          credentials.push({ username, password });
         }
-        usedUsernames.add(username.toLowerCase());
-        const password = randomCode();
-        const passwordHash = await hashPassword(password);
-        await tx.student.create({
-          data: {
-            username,
-            passwordHash,
-            sessionId,
-          },
-        });
-        credentials.push({ username, password });
-      }
-    });
+      });
+    } catch (transactionError) {
+      console.error('Transaction error:', transactionError);
+      throw transactionError;
+    }
 
     return NextResponse.json({ credentials });
   } catch (error) {
@@ -64,6 +94,15 @@ export async function POST(request: Request) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ message: error.issues[0]?.message ?? 'Invalid input' }, { status: 400 });
     }
-    return NextResponse.json({ message: 'Unable to generate student credentials' }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    console.error('Error details:', { errorMessage, errorStack });
+    return NextResponse.json(
+      { 
+        message: 'Unable to generate student credentials',
+        error: process.env.NODE_ENV === 'development' ? errorMessage : undefined
+      },
+      { status: 500 }
+    );
   }
 }
