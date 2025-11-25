@@ -745,7 +745,7 @@ export default function TeacherDashboard() {
               }}
               className="text-sm bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition"
             >
-              Export JSON
+              Export PDF
             </button>
             <button
               onClick={() => void handleEndSession()}
