@@ -141,6 +141,7 @@ export default function TeacherDashboard() {
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsNotice, setSettingsNotice] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const [selectedImage, setSelectedImage] = useState<{ src: string; prompt: string; mimeType: string | null } | null>(null);
   const sessionRequestIdRef = useRef(0);
 
   const toggleSection = useCallback((sectionId: string) => {
@@ -957,70 +958,89 @@ export default function TeacherDashboard() {
                   No images generated yet. Students can join with the classroom code to begin.
                 </div>
               ) : (
-                <div className="space-y-6 pt-4">
-                  {groupedSubmissions.map((group) => {
-                    const firstSubmission = group.submissions[0];
-                    const studentName = firstSubmission?.studentUsername ?? 'Unknown';
-                    const isShared = group.submissions.some((s) => s.isShared);
-                    
-                    return (
-                      <div key={group.rootId} className="border border-gray-200 rounded-lg p-4 space-y-4">
-                        <div className="flex items-start justify-between">
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium text-gray-900">{firstSubmission?.prompt}</p>
-                            <div className="flex flex-wrap gap-2 text-xs text-gray-600">
-                              <span>Student: {studentName}</span>
-                              <span>•</span>
-                              <span>{toDisplayTime(firstSubmission?.createdAt ?? '')}</span>
-                              {isShared && <span className="text-purple-600">• Shared</span>}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="space-y-3">
-                          {group.submissions.map((submission) => (
-                            <div key={submission.id} className="border border-gray-200 rounded-lg p-3 space-y-2">
-                              <div className="flex items-center justify-between text-xs text-gray-600">
-                                <span>
-                                  {submission.revisionIndex === 0 ? 'Original' : `Refinement ${submission.revisionIndex}`}
-                                </span>
-                                <span className={`px-2 py-1 rounded ${
-                                  submission.status === 'SUCCESS' ? 'bg-green-100 text-green-700' :
-                                  submission.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
-                                  'bg-red-100 text-red-700'
-                                }`}>
-                                  {submission.status}
-                                </span>
-                              </div>
+                <div className="pt-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {groupedSubmissions.flatMap((group) => {
+                      const firstSubmission = group.submissions[0];
+                      const studentName = firstSubmission?.studentUsername ?? 'Unknown';
+                      const isShared = group.submissions.some((s) => s.isShared);
+                      
+                      return group.submissions.map((submission) => {
+                        const imageSrc = submission.imageData 
+                          ? `data:${submission.imageMimeType ?? 'image/png'};base64,${submission.imageData}`
+                          : null;
+                        
+                        return (
+                          <div 
+                            key={submission.id} 
+                            className="border border-gray-200 rounded-lg p-3 bg-white hover:shadow-md transition-shadow cursor-pointer"
+                            onClick={() => {
+                              if (imageSrc) {
+                                setSelectedImage({
+                                  src: imageSrc,
+                                  prompt: submission.prompt,
+                                  mimeType: submission.imageMimeType,
+                                });
+                              }
+                            }}
+                          >
+                            <div className="space-y-2">
+                              {/* Prompt */}
+                              <p className="text-xs font-medium text-gray-900 line-clamp-2" title={submission.prompt}>
+                                {submission.prompt}
+                              </p>
+                              
+                              {/* Image Preview or Status */}
                               {submission.status === 'PENDING' ? (
-                                <div className="h-48 flex flex-col items-center justify-center gap-2 bg-gray-50 rounded-lg">
-                                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-purple-600 border-t-transparent"></div>
-                                  <span className="text-sm text-gray-600">Generating...</span>
+                                <div className="h-32 flex flex-col items-center justify-center gap-2 bg-gray-50 rounded-lg">
+                                  <div className="animate-spin rounded-full h-6 w-6 border-2 border-purple-600 border-t-transparent"></div>
+                                  <span className="text-xs text-gray-600">Generating...</span>
                                 </div>
-                              ) : submission.imageData ? (
-                                <div className="relative w-full aspect-[4/3] rounded-lg overflow-hidden border border-gray-200">
+                              ) : imageSrc ? (
+                                <div className="relative w-full h-32 rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
                                   <Image
-                                    src={`data:${submission.imageMimeType ?? 'image/png'};base64,${submission.imageData}`}
+                                    src={imageSrc}
                                     alt={submission.prompt}
                                     fill
-                                    sizes="(max-width: 768px) 100vw, 50vw"
+                                    sizes="(max-width: 768px) 150px, 200px"
                                     unoptimized
                                     className="object-cover"
                                   />
                                 </div>
                               ) : submission.status === 'ERROR' ? (
-                                <div className="h-48 flex items-center justify-center bg-red-50 rounded-lg text-sm text-red-700">
+                                <div className="h-32 flex items-center justify-center bg-red-50 rounded-lg text-xs text-red-700 px-2 text-center">
                                   {submission.errorMessage ?? 'Generation failed'}
                                 </div>
                               ) : null}
-                              {submission.prompt !== firstSubmission?.prompt && (
-                                <p className="text-sm text-gray-700 italic">"{submission.prompt}"</p>
-                              )}
+                              
+                              {/* Metadata */}
+                              <div className="flex items-center justify-between text-xs text-gray-600">
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="font-medium">{studentName}</span>
+                                  <span>{submission.revisionIndex === 0 ? 'Original' : `Refinement ${submission.revisionIndex}`}</span>
+                                </div>
+                                <div className="flex flex-col items-end gap-0.5">
+                                  <span className={`px-2 py-0.5 rounded text-xs ${
+                                    submission.status === 'SUCCESS' ? 'bg-green-100 text-green-700' :
+                                    submission.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
+                                    'bg-red-100 text-red-700'
+                                  }`}>
+                                    {submission.status}
+                                  </span>
+                                  {isShared && submission.revisionIndex === 0 && (
+                                    <span className="text-purple-600 text-xs">Shared</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {toDisplayTime(submission.createdAt)}
+                              </div>
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
+                          </div>
+                        );
+                      });
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -1151,6 +1171,44 @@ export default function TeacherDashboard() {
           )}
         </section>
       </div>
+
+      {/* Image Modal */}
+      {selectedImage && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
+          onClick={() => setSelectedImage(null)}
+        >
+          <div 
+            className="bg-white rounded-lg max-w-4xl max-h-[90vh] overflow-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900 pr-8">{selectedImage.prompt}</h3>
+              <button
+                onClick={() => setSelectedImage(null)}
+                className="text-gray-500 hover:text-gray-700 transition"
+                aria-label="Close"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4">
+              <div className="relative w-full aspect-[4/3] rounded-lg overflow-hidden bg-gray-100">
+                <Image
+                  src={selectedImage.src}
+                  alt={selectedImage.prompt}
+                  fill
+                  sizes="(max-width: 1024px) 100vw, 1024px"
+                  unoptimized
+                  className="object-contain"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
