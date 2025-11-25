@@ -40,21 +40,21 @@ interface ActivityResponse {
   submissions: ActivityApiSubmission[];
 }
 
-interface GallerySubmission {
-  id: string;
-  prompt: string;
-  createdAt: string;
-  status: 'PENDING' | 'SUCCESS' | 'ERROR';
-  revisionIndex: number;
-  imageData: string | null;
-  imageMimeType: string | null;
-  isShared: boolean;
-  studentUsername: string | null;
+interface SessionResponse {
+  session: {
+    id: string;
+    createdAt: string;
+    classroomCode?: string;
+    role: 'student' | 'teacher' | undefined;
+    chatEnabled?: boolean;
+    maxStudentEdits?: number;
+    teacher?: {
+      id: string;
+      username: string;
+      displayName: string | null;
+    } | null;
+  } | null;
 }
-
-type ImagesResponse = {
-  submissions?: Array<GallerySubmission & { remainingEdits?: number; ownedByCurrentUser?: boolean }>;
-};
 
 interface TeacherChatMessage {
   id: string;
@@ -94,22 +94,6 @@ interface TeacherChatsResponse {
   }>;
 }
 
-interface SessionResponse {
-  session: {
-    id: string;
-    createdAt: string;
-    classroomCode?: string;
-    role: 'student' | 'teacher' | undefined;
-    chatEnabled?: boolean;
-    maxStudentEdits?: number;
-    teacher?: {
-      id: string;
-      username: string;
-      displayName: string | null;
-    } | null;
-  } | null;
-}
-
 const timestampFormatter = new Intl.DateTimeFormat('en-US', {
   dateStyle: 'medium',
   timeStyle: 'short',
@@ -123,6 +107,19 @@ function formatTimestamp(iso: string) {
   }
 }
 
+const timeFormatter = new Intl.DateTimeFormat('en-US', {
+  hour: 'numeric',
+  minute: '2-digit',
+});
+
+function toDisplayTime(iso: string) {
+  try {
+    return timeFormatter.format(new Date(iso));
+  } catch {
+    return '';
+  }
+}
+
 export default function TeacherDashboard() {
   const [session, setSession] = useState<SessionResponse['session']>(null);
   const [loading, setLoading] = useState(true);
@@ -131,7 +128,6 @@ export default function TeacherDashboard() {
   const [formError, setFormError] = useState<string | null>(null);
   const [formLoading, setFormLoading] = useState(false);
   const [activity, setActivity] = useState<ActivitySubmission[]>([]);
-  const [gallery, setGallery] = useState<GallerySubmission[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [credentialCount, setCredentialCount] = useState(10);
   const [credentialLoading, setCredentialLoading] = useState(false);
@@ -144,7 +140,20 @@ export default function TeacherDashboard() {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsNotice, setSettingsNotice] = useState<string | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const sessionRequestIdRef = useRef(0);
+
+  const toggleSection = useCallback((sectionId: string) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(sectionId)) {
+        next.delete(sectionId);
+      } else {
+        next.add(sectionId);
+      }
+      return next;
+    });
+  }, []);
 
   const invalidatePendingSessionLoads = useCallback(() => {
     sessionRequestIdRef.current += 1;
@@ -154,7 +163,28 @@ export default function TeacherDashboard() {
     const requestId = ++sessionRequestIdRef.current;
     try {
       const res = await fetch('/api/session', { credentials: 'include' });
-      const data: SessionResponse = await res.json();
+      // Even if status is not OK, try to parse JSON - API might return 200 with null session
+      const text = await res.text();
+      if (!text || text.trim().length === 0) {
+        // Empty response - treat as no session
+        if (sessionRequestIdRef.current === requestId) {
+          setSession(null);
+          setLoading(false);
+        }
+        return;
+      }
+      let data: SessionResponse;
+      try {
+        data = JSON.parse(text);
+      } catch (parseError) {
+        console.error('Failed to parse JSON:', text);
+        // Invalid JSON - treat as no session
+        if (sessionRequestIdRef.current === requestId) {
+          setSession(null);
+          setLoading(false);
+        }
+        return;
+      }
       if (sessionRequestIdRef.current !== requestId) {
         return;
       }
@@ -181,7 +211,19 @@ export default function TeacherDashboard() {
           await new Promise((resolve) => setTimeout(resolve, 250));
           continue;
         }
-        const data: SessionResponse = await res.json();
+        const text = await res.text();
+        if (!text || text.trim().length === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          continue;
+        }
+        let data: SessionResponse;
+        try {
+          data = JSON.parse(text);
+        } catch (parseError) {
+          console.error('Failed to parse JSON:', text);
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          continue;
+        }
         if (data.session?.role === expectedRole) {
           setSession(data.session);
           setLoading(false);
@@ -199,9 +241,8 @@ export default function TeacherDashboard() {
     if (!session?.id) return;
     setRefreshing(true);
     try {
-      const [activityRes, galleryRes, chatsRes] = await Promise.all([
+      const [activityRes, chatsRes] = await Promise.all([
         fetch('/api/teacher/activity', { credentials: 'include' }),
-        fetch('/api/images', { credentials: 'include' }),
         fetch('/api/teacher/chats', { credentials: 'include' }),
       ]);
 
@@ -221,23 +262,6 @@ export default function TeacherDashboard() {
                 maxStudentEdits: activityData.session.maxStudentEdits,
               }
             : prev,
-        );
-      }
-
-      if (galleryRes.ok) {
-        const galleryData: ImagesResponse = await galleryRes.json();
-        setGallery(
-          (galleryData.submissions ?? []).map((entry) => ({
-            id: entry.id,
-            prompt: entry.prompt,
-            createdAt: entry.createdAt,
-            status: entry.status,
-            revisionIndex: entry.revisionIndex,
-            imageData: entry.imageData,
-            imageMimeType: entry.imageMimeType,
-            isShared: entry.isShared,
-            studentUsername: entry.studentUsername ?? null,
-          })),
         );
       }
 
@@ -386,7 +410,6 @@ export default function TeacherDashboard() {
       await loadSession();
       setCredentials([]);
       setActivity([]);
-      setGallery([]);
       setChats([]);
       setExpandedChats([]);
       setTeacherUsername('');
@@ -573,16 +596,20 @@ export default function TeacherDashboard() {
     );
   }, []);
 
-  const promptsByRoot = useMemo(() => {
+  // Group submissions by root ID, similar to student view
+  const groupedSubmissions = useMemo(() => {
     const groups = new Map<string, ActivitySubmission[]>();
     for (const entry of activity) {
       const rootId = entry.rootSubmissionId ?? entry.id;
       const list = groups.get(rootId) ?? [];
       groups.set(rootId, [...list, entry]);
     }
-    return Array.from(groups.values()).map((entries) =>
-      entries.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
-    );
+    return Array.from(groups.entries()).map(([rootId, entries]) => ({
+      rootId,
+      submissions: entries.sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      ),
+    }));
   }, [activity]);
 
   const chatsByStudent = useMemo(() => {
@@ -606,25 +633,25 @@ export default function TeacherDashboard() {
 
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[var(--color-surface-subtle)] text-[var(--color-foreground)]">
-        Loading teacher dashboard...
+      <main className="min-h-screen flex items-center justify-center bg-white text-gray-900">
+        <p className="text-lg text-gray-600">Loading teacher dashboard...</p>
       </main>
     );
   }
 
   if (!session || session.role !== 'teacher') {
     return (
-      <main className="min-h-screen bg-[var(--color-surface-subtle)] text-[var(--color-foreground)] flex items-center justify-center p-6">
+      <main className="min-h-screen bg-white text-gray-900 flex items-center justify-center p-6">
         <div className="w-full max-w-lg space-y-8">
           <header className="space-y-2 text-center">
-            <h1 className="text-3xl font-semibold text-[var(--color-accent-strong)]">Teacher Control Center</h1>
-            <p className="text-sm text-[var(--color-muted)]">
+            <h1 className="text-3xl font-semibold text-purple-700">Teacher Control Center</h1>
+            <p className="text-sm text-gray-600">
               Sign in with your assigned teacher credentials to open a fresh classroom and share the code with students.
             </p>
           </header>
-          <section className="bg-[var(--color-accent-soft)]/40 backdrop-blur rounded-2xl p-6 space-y-5 border border-[var(--color-border)]/70">
+          <section className="bg-purple-50 rounded-2xl p-6 space-y-5 border border-purple-200">
             <div className="space-y-2">
-              <label className="text-xs uppercase tracking-wide text-[var(--color-muted-foreground)]" htmlFor="teacher-username">
+              <label className="text-xs uppercase tracking-wide text-gray-600" htmlFor="teacher-username">
                 Username
               </label>
               <input
@@ -636,12 +663,12 @@ export default function TeacherDashboard() {
                   setFormError(null);
                 }}
                 autoComplete="username"
-                className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm text-[var(--color-foreground)] placeholder:text-[var(--color-muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)] transition"
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
                 placeholder="e.g. ms-jackson"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-xs uppercase tracking-wide text-[var(--color-muted-foreground)]" htmlFor="teacher-password">
+              <label className="text-xs uppercase tracking-wide text-gray-600" htmlFor="teacher-password">
                 Password
               </label>
               <input
@@ -653,19 +680,19 @@ export default function TeacherDashboard() {
                   setFormError(null);
                 }}
                 autoComplete="current-password"
-                className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm text-[var(--color-foreground)] placeholder:text-[var(--color-muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)] transition"
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
                 placeholder="Enter your password"
               />
             </div>
             {formError ? (
-              <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {formError}
               </div>
             ) : null}
             <button
               onClick={() => void handleTeacherLogin()}
               disabled={formLoading || teacherUsername.trim().length === 0 || teacherPassword.length === 0}
-              className="w-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-strong)] text-white font-semibold py-2 rounded-lg transition disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-muted)]"
+              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 rounded-lg transition disabled:bg-gray-300 disabled:text-gray-500"
             >
               {formLoading ? 'Signing in...' : 'Enter dashboard'}
             </button>
@@ -688,405 +715,438 @@ export default function TeacherDashboard() {
       : maxEditsDraft;
 
   return (
-    <main className="min-h-screen bg-[var(--color-surface-muted)] text-[var(--color-foreground)]">
-      <div className="max-w-7xl mx-auto px-8 py-10 space-y-10">
-        <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="space-y-2">
-            <h1 className="text-3xl font-semibold">Teacher Dashboard</h1>
-            <p className="text-sm text-[var(--color-muted)]">
-              Hello <span className="text-[var(--color-foreground)] font-medium">{teacherDisplayName}</span>.
+    <main className="min-h-screen bg-white text-gray-900">
+      <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+        {/* Header */}
+        <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between pb-6 border-b border-gray-200">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold text-gray-900">Teacher Dashboard</h1>
+            <p className="text-sm text-gray-600">
+              Hello <span className="font-medium text-gray-900">{teacherDisplayName}</span>.
               {classroomCode ? (
                 <>
                   {' '}
-                  Share classroom code{' '}
-                  <span className="font-mono tracking-[0.35em] text-lg text-[var(--color-accent)]">{classroomCode}</span> with students to let them join.
+                  Classroom code:{' '}
+                  <span className="font-mono tracking-wider text-lg text-purple-600 font-semibold">{classroomCode}</span>
                 </>
-              ) : null}{' '}
-              Monitor prompts, review generated images, and export today&apos;s class session.
+              ) : null}
             </p>
           </div>
-          <div className="flex flex-wrap gap-3 items-center">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => void loadActivity()}
-              className="text-sm bg-[var(--color-surface-muted)] hover:bg-[var(--color-surface)] px-4 py-2 rounded-lg"
+              className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition"
             >
-              {refreshing ? 'Refreshing...' : 'Refresh data'}
+              {refreshing ? 'Refreshing...' : 'Refresh'}
             </button>
             <button
               onClick={() => {
                 window.open('/api/teacher/export', '_blank');
               }}
-              className="text-sm bg-[var(--color-accent)] hover:bg-[var(--color-accent-strong)] text-white px-4 py-2 rounded-lg"
+              className="text-sm bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition"
             >
-              Export session JSON
+              Export JSON
             </button>
             <button
               onClick={() => void handleEndSession()}
-              className="text-sm bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-lg"
+              className="text-sm bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition"
             >
-              End session
+              End Session
             </button>
           </div>
         </header>
 
-        <section className="bg-[var(--color-surface)]/80 rounded-2xl border border-[var(--color-border)]/70 p-6 space-y-4">
-        <div className="flex flex-wrap items-center gap-6">
-          <div>
-            <p className="text-xs text-[var(--color-muted-foreground)]">Classroom code</p>
-            <p className="font-mono text-2xl text-[var(--color-accent)] tracking-widest">
-              {classroomCode || '—'}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-[var(--color-muted-foreground)]">Session ID</p>
-            <p className="font-mono text-[var(--color-muted)] text-sm">{session.id}</p>
-          </div>
-            <div>
-              <p className="text-xs text-[var(--color-muted-foreground)]">Started</p>
-              <p className="text-sm text-[var(--color-muted)]">{formatTimestamp(session.createdAt)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-[var(--color-muted-foreground)]">Total submissions</p>
-              <p className="text-sm text-[var(--color-muted)]">{activity.length}</p>
-            </div>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="flex items-start justify-between gap-4 rounded-xl border border-[var(--color-border)]/70 bg-[var(--color-surface-subtle)] px-4 py-3">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-[var(--color-muted-foreground)]">Chat assistant</p>
-                <p className="text-sm text-[var(--color-foreground)]">
-                  {chatEnabledSetting ? 'On for students' : 'Off for students'}
-                </p>
-                <p className="text-xs text-[var(--color-muted-foreground)] mt-1">Students lose access immediately when disabled.</p>
-              </div>
-              <button
-                onClick={() => void handleToggleChatAssistant()}
-                disabled={settingsSaving}
-                className={`text-xs font-semibold px-3 py-2 rounded-lg transition border ${
-                  chatEnabledSetting
-                    ? 'bg-rose-600/20 border-rose-500 text-rose-200 hover:bg-rose-600/30'
-                    : 'bg-[var(--color-accent)]/20 border-[var(--color-accent)] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/30'
-                } ${settingsSaving ? 'opacity-60 cursor-not-allowed' : ''}`}
-              >
-                {settingsSaving ? 'Saving...' : chatEnabledSetting ? 'Turn off' : 'Turn on'}
-              </button>
-            </div>
-            <div className="flex items-start justify-between gap-4 rounded-xl border border-[var(--color-border)]/70 bg-[var(--color-surface-subtle)] px-4 py-3">
-              <div>
-                <label className="text-xs uppercase tracking-wide text-[var(--color-muted-foreground)]" htmlFor="max-edits">
-                  Max refinements per image
-                </label>
-                <p className="text-sm text-[var(--color-foreground)]">
-                  {displayMaxEdits} {displayMaxEdits === 1 ? 'edit' : 'edits'} allowed
-                </p>
-                <p className="text-xs text-[var(--color-muted-foreground)] mt-1">Choose between 1 and 10 total AI image generations in a chain.</p>
-              </div>
-              <div className="flex flex-col items-end gap-2">
-                <input
-                  id="max-edits"
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={Number.isNaN(maxEditsDraft) ? '' : maxEditsDraft}
-                  onChange={(event) => {
-                    const raw = event.target.value;
-                    if (raw === '') {
-                      setMaxEditsDraft(Number.NaN);
-                      return;
-                    }
-                    const value = Number(raw);
-                    setMaxEditsDraft(Number.isNaN(value) ? Number.NaN : value);
-                  }}
-                  className="w-20 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
-                  disabled={settingsSaving}
-                />
-                <button
-                  onClick={() => void handleSaveMaxEdits()}
-                  disabled={settingsSaving}
-                  className={`text-xs font-semibold px-3 py-2 rounded-lg transition border bg-[var(--color-accent-soft)] border-[var(--color-accent)] text-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]/80 ${
-                    settingsSaving ? 'opacity-60 cursor-not-allowed' : ''
-                  }`}
-                >
-                  {settingsSaving ? 'Saving...' : 'Update limit'}
-                </button>
-              </div>
-            </div>
-          </div>
-          {settingsError ? (
-            <div className="rounded-lg border border-rose-500 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-              {settingsError}
-            </div>
-          ) : null}
-          {settingsNotice ? (
-            <div className="rounded-lg border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-4 py-3 text-sm text-[var(--color-accent)]">
-              {settingsNotice}
-            </div>
-          ) : null}
-        </section>
-
-        <section className="bg-[var(--color-surface)]/80 rounded-2xl border border-[var(--color-border)]/70 p-6 space-y-6">
-          <header className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-[var(--color-foreground)]">Generate student credentials</h2>
-              <p className="text-xs text-[var(--color-muted-foreground)]">Create quick sign-ins for today&apos;s class. Each username and password is eight characters.</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <label className="text-xs text-[var(--color-muted-foreground)]" htmlFor="credential-count">
-                Number of students
-              </label>
-              <input
-                id="credential-count"
-                type="number"
-                min={1}
-                max={50}
-                value={credentialCount}
-                onChange={(event) => {
-                  const value = Number(event.target.value);
-                  setCredentialCount(Number.isNaN(value) ? 0 : value);
-                }}
-                className="w-20 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
-              />
-              <button
-                onClick={() => void handleGenerateCredentials()}
-                disabled={credentialLoading}
-                className="text-sm bg-[var(--color-accent)] hover:bg-[var(--color-accent-strong)] text-white px-4 py-2 rounded-lg disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-muted)]"
-              >
-                {credentialLoading ? 'Generating...' : 'Create logins'}
-              </button>
-            </div>
-          </header>
-          {credentialError ? (
-            <div className="rounded-lg border border-rose-400 bg-rose-500/20 px-4 py-3 text-sm text-rose-100">
-              {credentialError}
-            </div>
-          ) : null}
-          {credentials.length > 0 ? (
-            <div className="space-y-3">
-              <div className="flex flex-wrap gap-3 justify-between items-center">
-                <p className="text-xs text-[var(--color-muted)]">Share each row with a student. Passwords are only shown here once.</p>
-                <div className="flex gap-2">
+        {/* Settings Section - Collapsible */}
+        <section className="bg-white border border-gray-200 rounded-lg">
+          <button
+            onClick={() => toggleSection('settings')}
+            className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition"
+          >
+            <h2 className="text-lg font-semibold text-gray-900">Session Settings</h2>
+            <svg
+              className={`w-5 h-5 text-gray-500 transition-transform ${collapsedSections.has('settings') ? '' : 'rotate-180'}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {!collapsedSections.has('settings') && (
+            <div className="px-4 pb-4 space-y-4 border-t border-gray-200">
+              <div className="grid gap-4 md:grid-cols-2 pt-4">
+                <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-gray-600">Chat assistant</p>
+                    <p className="text-sm text-gray-900">
+                      {chatEnabledSetting ? 'Enabled' : 'Disabled'}
+                    </p>
+                  </div>
                   <button
-                    onClick={() => void handleDownloadCredentials()}
-                    className="text-xs bg-[var(--color-surface-muted)] hover:bg-[var(--color-surface)] text-[var(--color-muted)] px-3 py-2 rounded-md"
+                    onClick={() => void handleToggleChatAssistant()}
+                    disabled={settingsSaving}
+                    className={`text-xs font-semibold px-3 py-2 rounded-lg transition ${
+                      chatEnabledSetting
+                        ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                        : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                    } ${settingsSaving ? 'opacity-60 cursor-not-allowed' : ''}`}
                   >
-                    Download CSV
-                  </button>
-                  <button
-                    onClick={() => void window.print()}
-                    className="text-xs bg-[var(--color-surface-muted)] hover:bg-[var(--color-surface)] text-[var(--color-muted)] px-3 py-2 rounded-md"
-                  >
-                    Print page
+                    {settingsSaving ? 'Saving...' : chatEnabledSetting ? 'Disable' : 'Enable'}
                   </button>
                 </div>
+                <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                  <div>
+                    <label className="text-xs uppercase tracking-wide text-gray-600" htmlFor="max-edits">
+                      Max refinements
+                    </label>
+                    <p className="text-sm text-gray-900">
+                      {displayMaxEdits} {displayMaxEdits === 1 ? 'edit' : 'edits'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="max-edits"
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={Number.isNaN(maxEditsDraft) ? '' : maxEditsDraft}
+                      onChange={(event) => {
+                        const raw = event.target.value;
+                        if (raw === '') {
+                          setMaxEditsDraft(Number.NaN);
+                          return;
+                        }
+                        const value = Number(raw);
+                        setMaxEditsDraft(Number.isNaN(value) ? Number.NaN : value);
+                      }}
+                      className="w-16 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      disabled={settingsSaving}
+                    />
+                    <button
+                      onClick={() => void handleSaveMaxEdits()}
+                      disabled={settingsSaving}
+                      className="text-xs font-semibold px-3 py-2 rounded-lg transition bg-purple-100 text-purple-700 hover:bg-purple-200 disabled:opacity-60"
+                    >
+                      {settingsSaving ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]/70">
-                <table className="min-w-full divide-y divide-[var(--color-border)]/70 text-sm">
-                  <thead className="bg-[var(--color-accent-soft)]/30">
-                    <tr>
-                      <th className="px-4 py-2 text-left font-semibold text-[var(--color-muted)]">#</th>
-                      <th className="px-4 py-2 text-left font-semibold text-[var(--color-muted)]">Username</th>
-                      <th className="px-4 py-2 text-left font-semibold text-[var(--color-muted)]">Password</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {credentials.map((credential, index) => (
-                      <tr key={credential.username} className={index % 2 === 0 ? 'bg-transparent' : 'bg-[var(--color-accent-soft)]/30'}>
-                        <td className="px-4 py-2 text-[var(--color-muted)]">{index + 1}</td>
-                        <td className="px-4 py-2 font-mono text-[var(--color-foreground)]">{credential.username}</td>
-                        <td className="px-4 py-2 font-mono text-[var(--color-foreground)]">{credential.password}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : (
-            <p className="text-xs text-[var(--color-muted-foreground)]">No login cards generated yet.</p>
-          )}
-        </section>
-
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold">Prompt timeline</h2>
-          {promptsByRoot.length === 0 ? (
-            <div className="bg-[var(--color-surface)]/80 border border-[var(--color-border)]/70 rounded-2xl p-6 text-[var(--color-muted-foreground)] text-sm">
-              No prompts yet. Students can join with the classroom password to begin.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {promptsByRoot.map((entries) => (
-                <article key={entries[0]?.id} className="bg-[var(--color-surface)]/80 border border-[var(--color-border)]/70 rounded-2xl p-6 space-y-4">
-                  <header className="space-y-1">
-                    <p className="text-sm text-[var(--color-muted)]">Started {formatTimestamp(entries[0]?.createdAt ?? '')}</p>
-                    <p className="text-lg font-medium text-[var(--color-foreground)]">{entries[0]?.prompt}</p>
-                  </header>
-                  <ol className="space-y-3">
-                    {entries.map((entry) => (
-                      <li key={entry.id} className="border border-[var(--color-border)]/70 rounded-xl px-4 py-3">
-                        <div className="flex flex-wrap justify-between gap-3 text-xs text-[var(--color-muted)]">
-                          <span>{formatTimestamp(entry.createdAt)}</span>
-                          <span>Revision {entry.revisionIndex}</span>
-                          <span>Status: {entry.status}</span>
-                          {entry.errorMessage ? <span className="text-rose-300">{entry.errorMessage}</span> : null}
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-3 text-[0.7rem] uppercase tracking-wide text-[var(--color-muted-foreground)]">
-                          <span>Owner: {entry.studentUsername ?? (entry.role === 'TEACHER' ? 'Teacher' : 'Unassigned')}</span>
-                          <span>{entry.isShared ? 'Shared with class' : 'Private'}</span>
-                        </div>
-                        <p className="mt-2 text-sm text-[var(--color-foreground)]">{entry.prompt}</p>
-                      </li>
-                    ))}
-                  </ol>
-                </article>
-              ))}
+              {settingsError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {settingsError}
+                </div>
+              ) : null}
+              {settingsNotice ? (
+                <div className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-3 text-sm text-purple-700">
+                  {settingsNotice}
+                </div>
+              ) : null}
             </div>
           )}
         </section>
 
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold">Chat conversations</h2>
-          {chatsByStudent.length === 0 ? (
-            <div className="bg-[var(--color-surface)]/80 border border-[var(--color-border)]/70 rounded-2xl p-6 text-[var(--color-muted-foreground)] text-sm">
-              No student chats have been started yet.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {chatsByStudent.map((group) => (
-                <article key={group.studentName} className="bg-[var(--color-surface)]/80 border border-[var(--color-border)]/70 rounded-2xl">
-                  <header className="border-b border-[var(--color-border)]/70 px-6 py-4 flex items-center justify-between">
-                    <div>
-                      <h3 className="text-lg font-semibold text-[var(--color-foreground)]">{group.studentName}</h3>
-                      <p className="text-xs text-[var(--color-muted-foreground)]">{group.threads.length} conversation{group.threads.length === 1 ? '' : 's'}</p>
+        {/* Student Credentials Section - Collapsible */}
+        <section className="bg-white border border-gray-200 rounded-lg">
+          <button
+            onClick={() => toggleSection('credentials')}
+            className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition"
+          >
+            <h2 className="text-lg font-semibold text-gray-900">Student Accounts</h2>
+            <svg
+              className={`w-5 h-5 text-gray-500 transition-transform ${collapsedSections.has('credentials') ? '' : 'rotate-180'}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {!collapsedSections.has('credentials') && (
+            <div className="px-4 pb-4 space-y-4 border-t border-gray-200">
+              <div className="flex items-center gap-3 pt-4">
+                <label className="text-sm text-gray-600" htmlFor="credential-count">
+                  Number of students:
+                </label>
+                <input
+                  id="credential-count"
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={credentialCount}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    setCredentialCount(Number.isNaN(value) ? 0 : value);
+                  }}
+                  className="w-20 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                <button
+                  onClick={() => void handleGenerateCredentials()}
+                  disabled={credentialLoading}
+                  className="text-sm bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg disabled:bg-gray-300 disabled:text-gray-500 transition"
+                >
+                  {credentialLoading ? 'Generating...' : 'Generate'}
+                </button>
+              </div>
+              {credentialError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {credentialError}
+                </div>
+              ) : null}
+              {credentials.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <p className="text-xs text-gray-600">Each username and password is 6 characters (lowercase letters and numbers).</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => void handleDownloadCredentials()}
+                        className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-md transition"
+                      >
+                        Download CSV
+                      </button>
                     </div>
-                  </header>
-                  <div className="divide-y divide-[var(--color-border)]/70">
-                    {group.threads.map((thread) => {
-                      const isExpanded = expandedChats.includes(thread.id);
-                      const lastMessage = thread.messages[thread.messages.length - 1];
-                      return (
-                        <div key={thread.id} className="px-6 py-4 space-y-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-[var(--color-foreground)]">{thread.title}</p>
-                              <p className="text-xs text-[var(--color-muted-foreground)]">
-                                Updated {formatTimestamp(thread.updatedAt)} · {thread.messages.length} messages
-                              </p>
+                  </div>
+                  <div className="overflow-x-auto rounded-lg border border-gray-200">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-purple-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left font-semibold text-gray-700">#</th>
+                          <th className="px-4 py-2 text-left font-semibold text-gray-700">Username</th>
+                          <th className="px-4 py-2 text-left font-semibold text-gray-700">Password</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {credentials.map((credential, index) => (
+                          <tr key={credential.username} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <td className="px-4 py-2 text-gray-600">{index + 1}</td>
+                            <td className="px-4 py-2 font-mono text-gray-900">{credential.username}</td>
+                            <td className="px-4 py-2 font-mono text-gray-900">{credential.password}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600">No credentials generated yet.</p>
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* Image Generations Section - Collapsible */}
+        <section className="bg-white border border-gray-200 rounded-lg">
+          <button
+            onClick={() => toggleSection('images')}
+            className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition"
+          >
+            <h2 className="text-lg font-semibold text-gray-900">Image Generations</h2>
+            <svg
+              className={`w-5 h-5 text-gray-500 transition-transform ${collapsedSections.has('images') ? '' : 'rotate-180'}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {!collapsedSections.has('images') && (
+            <div className="px-4 pb-4 border-t border-gray-200">
+              {groupedSubmissions.length === 0 ? (
+                <div className="py-8 text-center text-gray-600 text-sm">
+                  No images generated yet. Students can join with the classroom code to begin.
+                </div>
+              ) : (
+                <div className="space-y-6 pt-4">
+                  {groupedSubmissions.map((group) => {
+                    const firstSubmission = group.submissions[0];
+                    const studentName = firstSubmission?.studentUsername ?? 'Unknown';
+                    const isShared = group.submissions.some((s) => s.isShared);
+                    
+                    return (
+                      <div key={group.rootId} className="border border-gray-200 rounded-lg p-4 space-y-4">
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium text-gray-900">{firstSubmission?.prompt}</p>
+                            <div className="flex flex-wrap gap-2 text-xs text-gray-600">
+                              <span>Student: {studentName}</span>
+                              <span>•</span>
+                              <span>{toDisplayTime(firstSubmission?.createdAt ?? '')}</span>
+                              {isShared && <span className="text-purple-600">• Shared</span>}
                             </div>
-                            <button
-                              onClick={() => toggleChatExpansion(thread.id)}
-                              className="text-xs bg-[var(--color-surface-muted)] hover:bg-[var(--color-surface)] text-[var(--color-muted)] px-3 py-2 rounded-md"
-                            >
-                              {isExpanded ? 'Collapse' : 'View conversation'}
-                            </button>
                           </div>
-                          <p className="text-sm text-[var(--color-muted)] line-clamp-2">
-                            {lastMessage ? `${lastMessage.sender === 'STUDENT' ? 'Student' : 'AI'}: ${lastMessage.content}` : 'No messages yet'}
-                          </p>
-                          {isExpanded ? (
-                            <div className="space-y-3 border border-[var(--color-border)]/70 rounded-xl bg-[var(--color-surface)]/70 p-4">
-                              {thread.messages.length === 0 ? (
-                                <p className="text-xs text-[var(--color-muted-foreground)]">No messages in this conversation.</p>
-                              ) : (
-                                thread.messages.map((message) => (
-                                  <div key={message.id} className="space-y-1">
-                                    <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-wide text-[var(--color-muted-foreground)]">
-                                      <span>{message.sender === 'STUDENT' ? 'Student' : 'AI Assistant'}</span>
-                                      <span>{formatTimestamp(message.createdAt)}</span>
-                                    </div>
-                                    <div className="markdown-message text-sm text-[var(--color-foreground)] bg-[var(--color-accent-soft)]/30 border border-[var(--color-border)]/70 rounded-lg px-3 py-2">
-                                      <ReactMarkdown
-                                        remarkPlugins={[remarkGfm, remarkMath]}
-                                        rehypePlugins={[rehypeKatex]}
-                                        components={{
-                                          a: ({ ...props }) => (
-                                            <a
-                                              {...props}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="underline text-[var(--color-accent)] hover:text-[var(--color-accent-strong)]"
-                                            />
-                                          ),
-                                          code: ({ className, children, ...props }) => {
-                                            const isInline = (props as { inline?: boolean }).inline;
-                                            if (isInline) {
-                                              return (
-                                                <code
-                                                  className={`rounded bg-[var(--color-accent-soft)]/40 px-1 py-0.5 text-[0.8rem] ${className ?? ''}`}
-                                                >
-                                                  {children}
-                                                </code>
-                                              );
-                                            }
-                                            return (
-                                              <pre
-                                                className={`rounded-xl bg-[var(--color-surface-subtle)] px-3 py-3 text-[0.8rem] text-[var(--color-foreground)] overflow-x-auto ${className ?? ''}`}
-                                              >
-                                                <code>{children}</code>
-                                              </pre>
-                                            );
-                                          },
-                                          p: ({ children }) => <p className="leading-relaxed whitespace-pre-wrap">{children}</p>,
-                                          ul: ({ children }) => <ul className="ml-4 list-disc space-y-1">{children}</ul>,
-                                          ol: ({ children }) => <ol className="ml-4 list-decimal space-y-1">{children}</ol>,
-                                          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-                                          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                                          h1: ({ children }) => <h1 className="text-base font-semibold mb-2">{children}</h1>,
-                                          h2: ({ children }) => <h2 className="text-sm font-semibold mb-2">{children}</h2>,
-                                          h3: ({ children }) => <h3 className="text-sm font-semibold mb-1">{children}</h3>,
-                                        }}
-                                      >
-                                        {message.content}
-                                      </ReactMarkdown>
-                                    </div>
-                                  </div>
-                                ))
+                        </div>
+                        <div className="space-y-3">
+                          {group.submissions.map((submission) => (
+                            <div key={submission.id} className="border border-gray-200 rounded-lg p-3 space-y-2">
+                              <div className="flex items-center justify-between text-xs text-gray-600">
+                                <span>
+                                  {submission.revisionIndex === 0 ? 'Original' : `Refinement ${submission.revisionIndex}`}
+                                </span>
+                                <span className={`px-2 py-1 rounded ${
+                                  submission.status === 'SUCCESS' ? 'bg-green-100 text-green-700' :
+                                  submission.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
+                                  'bg-red-100 text-red-700'
+                                }`}>
+                                  {submission.status}
+                                </span>
+                              </div>
+                              {submission.status === 'PENDING' ? (
+                                <div className="h-48 flex flex-col items-center justify-center gap-2 bg-gray-50 rounded-lg">
+                                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-purple-600 border-t-transparent"></div>
+                                  <span className="text-sm text-gray-600">Generating...</span>
+                                </div>
+                              ) : submission.imageData ? (
+                                <div className="relative w-full aspect-[4/3] rounded-lg overflow-hidden border border-gray-200">
+                                  <Image
+                                    src={`data:${submission.imageMimeType ?? 'image/png'};base64,${submission.imageData}`}
+                                    alt={submission.prompt}
+                                    fill
+                                    sizes="(max-width: 768px) 100vw, 50vw"
+                                    unoptimized
+                                    className="object-cover"
+                                  />
+                                </div>
+                              ) : submission.status === 'ERROR' ? (
+                                <div className="h-48 flex items-center justify-center bg-red-50 rounded-lg text-sm text-red-700">
+                                  {submission.errorMessage ?? 'Generation failed'}
+                                </div>
+                              ) : null}
+                              {submission.prompt !== firstSubmission?.prompt && (
+                                <p className="text-sm text-gray-700 italic">"{submission.prompt}"</p>
                               )}
                             </div>
-                          ) : null}
+                          ))}
                         </div>
-                      );
-                    })}
-                  </div>
-                </article>
-              ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </section>
 
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold">Generated images</h2>
-          {gallery.length === 0 ? (
-            <div className="bg-[var(--color-surface)]/80 border border-[var(--color-border)]/70 rounded-2xl p-6 text-[var(--color-muted-foreground)] text-sm">
-              Images will appear here as students complete generations.
-            </div>
-          ) : (
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {gallery
-                .filter((entry) => entry.status === 'SUCCESS' && entry.imageData)
-                .map((entry) => (
-                  <figure key={entry.id} className="bg-[var(--color-surface)]/80 border border-[var(--color-border)]/70 rounded-2xl overflow-hidden">
-                    <div className="relative w-full aspect-[4/3]">
-                      <Image
-                        src={`data:${entry.imageMimeType ?? 'image/png'};base64,${entry.imageData}`}
-                        alt={entry.prompt}
-                        fill
-                        sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
-                        unoptimized
-                        className="object-cover"
-                      />
+        {/* Chat Conversations Section - Collapsible */}
+        <section className="bg-white border border-gray-200 rounded-lg">
+          <button
+            onClick={() => toggleSection('chats')}
+            className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition"
+          >
+            <h2 className="text-lg font-semibold text-gray-900">Chat Conversations</h2>
+            <svg
+              className={`w-5 h-5 text-gray-500 transition-transform ${collapsedSections.has('chats') ? '' : 'rotate-180'}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {!collapsedSections.has('chats') && (
+            <div className="px-4 pb-4 border-t border-gray-200">
+              {chatsByStudent.length === 0 ? (
+                <div className="py-8 text-center text-gray-600 text-sm">
+                  No student chats have been started yet.
+                </div>
+              ) : (
+                <div className="space-y-4 pt-4">
+                  {chatsByStudent.map((group) => (
+                    <div key={group.studentName} className="border border-gray-200 rounded-lg">
+                      <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                        <h3 className="text-sm font-semibold text-gray-900">{group.studentName}</h3>
+                        <p className="text-xs text-gray-600">{group.threads.length} conversation{group.threads.length === 1 ? '' : 's'}</p>
+                      </div>
+                      <div className="divide-y divide-gray-200">
+                        {group.threads.map((thread) => {
+                          const isExpanded = expandedChats.includes(thread.id);
+                          const lastMessage = thread.messages[thread.messages.length - 1];
+                          return (
+                            <div key={thread.id} className="px-4 py-3 space-y-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-900">{thread.title}</p>
+                                  <p className="text-xs text-gray-600">
+                                    Updated {formatTimestamp(thread.updatedAt)} · {thread.messages.length} messages
+                                  </p>
+                                </div>
+                                <button
+                                  onClick={() => toggleChatExpansion(thread.id)}
+                                  className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-md transition"
+                                >
+                                  {isExpanded ? 'Collapse' : 'View'}
+                                </button>
+                              </div>
+                              {lastMessage && (
+                                <p className="text-sm text-gray-600 line-clamp-2">
+                                  {lastMessage.sender === 'STUDENT' ? 'Student' : 'AI'}: {lastMessage.content}
+                                </p>
+                              )}
+                              {isExpanded && (
+                                <div className="space-y-3 border border-gray-200 rounded-lg bg-gray-50 p-4">
+                                  {thread.messages.length === 0 ? (
+                                    <p className="text-xs text-gray-600">No messages in this conversation.</p>
+                                  ) : (
+                                    thread.messages.map((message) => (
+                                      <div key={message.id} className="space-y-1">
+                                        <div className="flex items-center justify-between text-xs text-gray-600">
+                                          <span>{message.sender === 'STUDENT' ? 'Student' : 'AI Assistant'}</span>
+                                          <span>{formatTimestamp(message.createdAt)}</span>
+                                        </div>
+                                        <div className="text-sm text-gray-900 bg-white border border-gray-200 rounded-lg px-3 py-2">
+                                          <ReactMarkdown
+                                            remarkPlugins={[remarkGfm, remarkMath]}
+                                            rehypePlugins={[rehypeKatex]}
+                                            components={{
+                                              a: ({ ...props }) => (
+                                                <a
+                                                  {...props}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                  className="underline text-purple-600 hover:text-purple-700"
+                                                />
+                                              ),
+                                              code: ({ className, children, ...props }) => {
+                                                const isInline = (props as { inline?: boolean }).inline;
+                                                if (isInline) {
+                                                  return (
+                                                    <code className={`rounded bg-purple-100 px-1 py-0.5 text-xs ${className ?? ''}`}>
+                                                      {children}
+                                                    </code>
+                                                  );
+                                                }
+                                                return (
+                                                  <pre className="rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-900 overflow-x-auto">
+                                                    <code>{children}</code>
+                                                  </pre>
+                                                );
+                                              },
+                                              p: ({ children }) => <p className="leading-relaxed whitespace-pre-wrap">{children}</p>,
+                                              ul: ({ children }) => <ul className="ml-4 list-disc space-y-1">{children}</ul>,
+                                              ol: ({ children }) => <ol className="ml-4 list-decimal space-y-1">{children}</ol>,
+                                              li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                                              strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                                              h1: ({ children }) => <h1 className="text-base font-semibold mb-2">{children}</h1>,
+                                              h2: ({ children }) => <h2 className="text-sm font-semibold mb-2">{children}</h2>,
+                                              h3: ({ children }) => <h3 className="text-sm font-semibold mb-1">{children}</h3>,
+                                            }}
+                                          >
+                                            {message.content}
+                                          </ReactMarkdown>
+                                        </div>
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <figcaption className="p-4 space-y-2">
-                      <p className="text-sm text-[var(--color-foreground)]">{entry.prompt}</p>
-                      <p className="text-xs text-[var(--color-muted-foreground)] flex flex-wrap gap-3">
-                        <span>{formatTimestamp(entry.createdAt)}</span>
-                        <span>Revision {entry.revisionIndex}</span>
-                      </p>
-                      <p className="text-xs text-[var(--color-muted-foreground)] flex flex-wrap gap-3">
-                        <span>Owner: {entry.studentUsername ?? 'Unknown'}</span>
-                        <span>{entry.isShared ? 'Shared' : 'Private'}</span>
-                      </p>
-                    </figcaption>
-                  </figure>
-                ))}
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </section>

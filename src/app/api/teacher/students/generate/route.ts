@@ -9,8 +9,8 @@ const bodySchema = z.object({
   count: z.number().int().min(1).max(50),
 });
 
-function randomCode(length = 8) {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+function randomCode(length = 6) {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   const bytes = crypto.randomBytes(length);
   let result = '';
   for (let i = 0; i < length; i += 1) {
