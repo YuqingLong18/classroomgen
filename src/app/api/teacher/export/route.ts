@@ -338,11 +338,13 @@ export async function GET() {
       doc.end();
     });
 
-    return new NextResponse(pdfBuffer, {
+    const pdfBytes = new Uint8Array(pdfBuffer);
+
+    return new NextResponse(pdfBytes, {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="session-${session.classroomCode}-${new Date().toISOString().split('T')[0]}.pdf"`,
-        'Content-Length': pdfBuffer.length.toString(),
+        'Content-Length': pdfBytes.byteLength.toString(),
       },
     });
   } catch (error) {

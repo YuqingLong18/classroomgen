@@ -47,7 +47,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'Invalid credentials.' }, { status: 401 });
     }
 
-    const externalUserId = authResult.user.id.toString();
     const externalUsername = authResult.user.username;
 
     // Find or create teacher record in local database (for session management)

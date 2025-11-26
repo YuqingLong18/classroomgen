@@ -177,7 +177,7 @@ export default function TeacherDashboard() {
       let data: SessionResponse;
       try {
         data = JSON.parse(text);
-      } catch (parseError) {
+      } catch {
         console.error('Failed to parse JSON:', text);
         // Invalid JSON - treat as no session
         if (sessionRequestIdRef.current === requestId) {
@@ -220,7 +220,7 @@ export default function TeacherDashboard() {
         let data: SessionResponse;
         try {
           data = JSON.parse(text);
-        } catch (parseError) {
+        } catch {
           console.error('Failed to parse JSON:', text);
           await new Promise((resolve) => setTimeout(resolve, 250));
           continue;
