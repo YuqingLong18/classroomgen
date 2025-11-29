@@ -1,6 +1,7 @@
 'use client';
 
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StudentNav } from '@/components/student/StudentNav';
 
@@ -86,6 +87,7 @@ function downloadImage(submission: Submission) {
 }
 
 export default function StudentHome() {
+  const router = useRouter();
   const [session, setSession] = useState<SessionState | null>(null);
   const [initializing, setInitializing] = useState(true);
   const [classroomCode, setClassroomCode] = useState('');
@@ -558,6 +560,14 @@ export default function StudentHome() {
           >
             {loggingIn ? 'Signing in...' : 'Enter classroom'}
           </button>
+          <div className="pt-2 border-t border-[var(--color-border)]">
+            <button
+              onClick={() => router.push('/teacher')}
+              className="w-full text-sm border border-[var(--color-border)] text-[var(--color-foreground)] hover:bg-[var(--color-surface-subtle)] font-medium py-2.5 rounded-lg transition"
+            >
+              I am a teacher
+            </button>
+          </div>
         </div>
       </main>
     );
