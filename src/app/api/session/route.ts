@@ -4,13 +4,29 @@ import { getSessionFromCookies } from '@/lib/session';
 import { roleCookieName, sessionCookieName, studentCookieName } from '@/lib/auth';
 
 export async function GET() {
-  const { sessionId, role, studentId } = await getSessionFromCookies();
+  try {
+    let sessionId: string | undefined;
+    let role: string | undefined;
+    let studentId: string | undefined;
+    
+    try {
+      const cookies = await getSessionFromCookies();
+      sessionId = cookies.sessionId;
+      role = cookies.role;
+      studentId = cookies.studentId;
+    } catch (cookieError) {
+      console.error('Error reading cookies:', cookieError);
+      // Return null session if cookies can't be read
+      return NextResponse.json({ session: null });
+    }
 
-  if (!sessionId) {
-    return NextResponse.json({ session: null });
-  }
+    if (!sessionId) {
+      return NextResponse.json({ session: null });
+    }
 
-  const session = await prisma.session.findUnique({
+    let session;
+    try {
+      session = await prisma.session.findUnique({
     where: { id: sessionId },
     select: {
       id: true,
@@ -28,6 +44,10 @@ export async function GET() {
       },
     },
   });
+    } catch (dbError) {
+      console.error('Database error in GET /api/session:', dbError);
+      return NextResponse.json({ session: null });
+    }
 
   if (!session || !session.isActive) {
     const response = NextResponse.json({ session: null });
@@ -67,6 +87,11 @@ export async function GET() {
       student,
     },
   });
+  } catch (error) {
+    console.error('Error in GET /api/session:', error);
+    // Return 200 with null session instead of 500 - no session is a valid state
+    return NextResponse.json({ session: null });
+  }
 }
 
 export async function DELETE() {

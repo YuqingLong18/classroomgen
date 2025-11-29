@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { roleCookieName, sessionCookieName, studentCookieName, verifyPassword } from '@/lib/auth';
+import { roleCookieName, sessionCookieName, studentCookieName } from '@/lib/auth';
 import { deactivateTeacherSessions, generateUniqueClassroomCode } from '@/lib/session';
 
 const bodySchema = z.object({
@@ -10,28 +10,68 @@ const bodySchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+// External authentication service URL
+const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://localhost:3000';
+
 export async function POST(request: Request) {
   try {
     const json = await request.json();
     const { username, password } = bodySchema.parse(json);
 
-    const teacher = await prisma.teacher.findUnique({
-      where: { username },
+    // Verify credentials with external authentication service
+    let authResponse;
+    try {
+      authResponse = await fetch(`${AUTH_SERVICE_URL}/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+    } catch (fetchError) {
+      console.error('Failed to connect to authentication service:', fetchError);
+      return NextResponse.json(
+        { message: 'Authentication service unavailable. Please try again later.' },
+        { status: 503 }
+      );
+    }
+
+    if (!authResponse.ok) {
+      const errorData = await authResponse.json().catch(() => ({ error: 'Authentication failed' }));
+      return NextResponse.json(
+        { message: errorData.error || 'Invalid credentials.' },
+        { status: authResponse.status === 401 ? 401 : 500 }
+      );
+    }
+
+    const authResult = await authResponse.json();
+    if (!authResult.success || !authResult.user) {
+      return NextResponse.json({ message: 'Invalid credentials.' }, { status: 401 });
+    }
+
+    const externalUsername = authResult.user.username;
+
+    // Find or create teacher record in local database (for session management)
+    let teacher = await prisma.teacher.findUnique({
+      where: { username: externalUsername },
       select: {
         id: true,
         username: true,
         displayName: true,
-        passwordHash: true,
       },
     });
 
+    // Create teacher record if it doesn't exist (first time login)
     if (!teacher) {
-      return NextResponse.json({ message: 'Teacher credentials not found.' }, { status: 404 });
-    }
-
-    const isValid = await verifyPassword(password, teacher.passwordHash);
-    if (!isValid) {
-      return NextResponse.json({ message: 'Incorrect password.' }, { status: 401 });
+      teacher = await prisma.teacher.create({
+        data: {
+          username: externalUsername,
+          passwordHash: '', // Not used - authentication is external
+        },
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+        },
+      });
     }
 
     await deactivateTeacherSessions(teacher.id);
