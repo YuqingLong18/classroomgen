@@ -1,21 +1,22 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { StudentStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { roleCookieName, sessionCookieName, studentCookieName, verifyPassword } from '@/lib/auth';
+import { roleCookieName, sessionCookieName, studentCookieName } from '@/lib/auth';
 
 const bodySchema = z.object({
   classroomCode: z
     .string()
     .trim()
     .regex(/^\d{8}$/, 'Classroom code must be eight digits'),
-  username: z.string().trim().min(3, 'Username is required'),
-  password: z.string().min(1, 'Password is required'),
+  name: z.string().trim().min(2, 'Please enter your name.').max(40, 'Name must be under 40 characters.'),
 });
 
 export async function POST(request: Request) {
   try {
     const json = await request.json();
-    const { classroomCode, username, password } = bodySchema.parse(json);
+    const { classroomCode, name } = bodySchema.parse(json);
+    const studentName = name.replace(/\s+/g, ' ').trim();
 
     const session = await prisma.session.findFirst({
       where: {
@@ -35,26 +36,39 @@ export async function POST(request: Request) {
       );
     }
 
-    const student = await prisma.student.findFirst({
+    const existing = await prisma.student.findFirst({
       where: {
-        username,
         sessionId: session.id,
+        username: studentName,
       },
       select: {
         id: true,
-        passwordHash: true,
         username: true,
+        status: true,
       },
     });
 
-    if (!student) {
-      return NextResponse.json({ message: 'Account not found for this classroom.' }, { status: 404 });
+    if (existing?.status === StudentStatus.REMOVED) {
+      return NextResponse.json(
+        { message: 'That name was removed by your teacher. Choose another to rejoin.' },
+        { status: 403 },
+      );
     }
 
-    const isValid = await verifyPassword(password, student.passwordHash);
-    if (!isValid) {
-      return NextResponse.json({ message: 'Incorrect password. Please try again.' }, { status: 401 });
-    }
+    const student =
+      existing ??
+      (await prisma.student.create({
+        data: {
+          username: studentName,
+          passwordHash: null,
+          status: StudentStatus.ACTIVE,
+          sessionId: session.id,
+        },
+        select: {
+          id: true,
+          username: true,
+        },
+      }));
 
     const response = NextResponse.json({
       sessionId: session.id,

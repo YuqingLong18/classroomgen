@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { getSessionFromCookies } from '@/lib/session';
+import { getSessionFromCookies, requireActiveStudent } from '@/lib/session';
 
 const MAX_THREADS_PER_STUDENT = 5;
 const CHAT_DISABLED_MESSAGE = 'Chat assistant is currently disabled.';
@@ -15,6 +15,14 @@ export async function GET() {
 
   if (!sessionId || role !== 'student' || !studentId) {
     return NextResponse.json({ message: 'Student access required.' }, { status: 403 });
+  }
+
+  const studentStatus = await requireActiveStudent(sessionId, studentId);
+  if (!studentStatus.active) {
+    return NextResponse.json(
+      { message: 'You were removed from the classroom. Please rejoin with a new name.' },
+      { status: 403 },
+    );
   }
 
   const session = await prisma.session.findUnique({
@@ -78,6 +86,14 @@ export async function POST(request: Request) {
 
     const json = await request.json().catch(() => ({}));
     const { title } = createSchema.parse(json);
+
+    const studentStatus = await requireActiveStudent(sessionId, studentId);
+    if (!studentStatus.active) {
+      return NextResponse.json(
+        { message: 'You were removed from the classroom. Please rejoin with a new name.' },
+        { status: 403 },
+      );
+    }
 
     const threadCount = await prisma.chatThread.count({
       where: { sessionId, studentId },

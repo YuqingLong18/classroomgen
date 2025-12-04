@@ -24,6 +24,11 @@ enum ChatSender {
   AI
 }
 
+enum StudentStatus {
+  ACTIVE
+  REMOVED
+}
+
 model Teacher {
   id           String    @id @default(cuid())
   username     String    @unique
@@ -82,7 +87,8 @@ model PromptSubmission {
 model Student {
   id           String             @id @default(cuid())
   username     String
-  passwordHash String
+  passwordHash String?
+  status       StudentStatus      @default(ACTIVE)
   createdAt    DateTime           @default(now())
   session      Session            @relation(fields: [sessionId], references: [id])
   sessionId    String

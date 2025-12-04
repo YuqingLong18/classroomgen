@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getSessionFromCookies } from '@/lib/session';
+import { getSessionFromCookies, requireActiveStudent } from '@/lib/session';
 import { Prisma } from '@prisma/client';
 
 export async function GET() {
@@ -24,6 +24,22 @@ export async function GET() {
   }
 
   const maxEdits = session.maxStudentEdits ?? 3;
+
+  if (role === 'student') {
+    if (!studentId) {
+      return NextResponse.json(
+        { submissions: [], message: 'Student access required.' },
+        { status: 403 },
+      );
+    }
+    const status = await requireActiveStudent(sessionId, studentId);
+    if (!status.active) {
+      return NextResponse.json(
+        { submissions: [], message: 'You were removed from the classroom. Rejoin with a new name.' },
+        { status: 403 },
+      );
+    }
+  }
 
   const where: Prisma.PromptSubmissionWhereInput = { sessionId };
   if (role !== 'teacher') {

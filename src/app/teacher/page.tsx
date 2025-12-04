@@ -94,6 +94,13 @@ interface TeacherChatsResponse {
   }>;
 }
 
+interface SessionStudent {
+  id: string;
+  username: string;
+  status: 'ACTIVE' | 'REMOVED';
+  createdAt: string;
+}
+
 const timestampFormatter = new Intl.DateTimeFormat('en-US', {
   dateStyle: 'medium',
   timeStyle: 'short',
@@ -129,10 +136,9 @@ export default function TeacherDashboard() {
   const [formLoading, setFormLoading] = useState(false);
   const [activity, setActivity] = useState<ActivitySubmission[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [credentialCount, setCredentialCount] = useState(10);
-  const [credentialLoading, setCredentialLoading] = useState(false);
-  const [credentialError, setCredentialError] = useState<string | null>(null);
-  const [credentials, setCredentials] = useState<Array<{ username: string; password: string }>>([]);
+  const [students, setStudents] = useState<SessionStudent[]>([]);
+  const [studentsError, setStudentsError] = useState<string | null>(null);
+  const [studentActionId, setStudentActionId] = useState<string | null>(null);
   const [chats, setChats] = useState<TeacherChatThread[]>([]);
   const [expandedChats, setExpandedChats] = useState<string[]>([]);
   const [chatEnabledSetting, setChatEnabledSetting] = useState(true);
@@ -242,9 +248,10 @@ export default function TeacherDashboard() {
     if (!session?.id) return;
     setRefreshing(true);
     try {
-      const [activityRes, chatsRes] = await Promise.all([
+      const [activityRes, chatsRes, studentsRes] = await Promise.all([
         fetch('/api/teacher/activity', { credentials: 'include' }),
         fetch('/api/teacher/chats', { credentials: 'include' }),
+        fetch('/api/teacher/students', { credentials: 'include' }),
       ]);
 
       if (activityRes.ok) {
@@ -282,6 +289,16 @@ export default function TeacherDashboard() {
           })),
         }));
         setChats(chatThreads);
+      }
+
+      if (studentsRes.ok) {
+        const studentData = await studentsRes.json();
+        setStudents(studentData.students ?? []);
+        setStudentsError(null);
+      } else {
+        const error = await studentsRes.json().catch(() => ({ message: 'Unable to load students.' }));
+        setStudentsError(error.message ?? 'Unable to load students.');
+        setStudents([]);
       }
     } catch (error) {
       console.error('Failed to load activity', error);
@@ -367,7 +384,10 @@ export default function TeacherDashboard() {
       const payload = (await res.json().catch(() => null)) as TeacherLoginPayload | null;
 
       setTeacherPassword('');
-      setCredentials([]);
+      setStudents([]);
+      setStudentActionId(null);
+      setStudentsError(null);
+      setStudentsError(null);
       setChats([]);
       setExpandedChats([]);
 
@@ -409,7 +429,7 @@ export default function TeacherDashboard() {
         credentials: 'include',
       });
       await loadSession();
-      setCredentials([]);
+      setStudents([]);
       setActivity([]);
       setChats([]);
       setExpandedChats([]);
@@ -422,50 +442,39 @@ export default function TeacherDashboard() {
     }
   }, [loadSession]);
 
-  const handleGenerateCredentials = useCallback(async () => {
-    if (!session?.id) return;
-    const safeCount = Math.min(50, Math.max(1, Math.floor(credentialCount)));
-    setCredentialCount(safeCount);
-    setCredentialLoading(true);
-    setCredentialError(null);
-    try {
-      const res = await fetch('/api/teacher/students/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ count: safeCount }),
-      });
+  const handleKickStudent = useCallback(
+    async (studentId: string) => {
+      if (!session?.id) return;
+      setStudentActionId(studentId);
+      setStudentsError(null);
+      try {
+        const res = await fetch('/api/teacher/students', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ studentId, action: 'kick' }),
+        });
 
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({ message: 'Unable to generate credentials.' }));
-        setCredentialError(error.message ?? 'Unable to generate credentials.');
-        return;
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setStudentsError(data.message ?? 'Unable to remove student.');
+          return;
+        }
+
+        setStudents((prev) =>
+          prev.map((entry) =>
+            entry.id === studentId ? { ...entry, status: 'REMOVED' } : entry,
+          ),
+        );
+      } catch (error) {
+        console.error('Failed to remove student', error);
+        setStudentsError('Unable to remove student right now.');
+      } finally {
+        setStudentActionId(null);
       }
-
-      const data = await res.json();
-      setCredentials(data.credentials ?? []);
-    } catch (error) {
-      console.error('Failed to generate credentials', error);
-      setCredentialError('Something went wrong while generating credentials.');
-    } finally {
-      setCredentialLoading(false);
-    }
-  }, [credentialCount, session?.id]);
-
-  const handleDownloadCredentials = useCallback(() => {
-    if (credentials.length === 0) return;
-    const rows = [['Username', 'Password'], ...credentials.map(({ username, password }) => [username, password])];
-    const csv = rows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `student-credentials-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }, [credentials]);
+    },
+    [session?.id],
+  );
 
   const handleToggleChatAssistant = useCallback(async () => {
     if (!session?.id) return;
@@ -847,15 +856,15 @@ export default function TeacherDashboard() {
           )}
         </section>
 
-        {/* Student Credentials Section - Collapsible */}
+        {/* Student Roster Section - Collapsible */}
         <section className="bg-white border border-gray-200 rounded-lg">
           <button
-            onClick={() => toggleSection('credentials')}
+            onClick={() => toggleSection('students')}
             className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition"
           >
-            <h2 className="text-lg font-semibold text-gray-900">Student Accounts</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Student Roster</h2>
             <svg
-              className={`w-5 h-5 text-gray-500 transition-transform ${collapsedSections.has('credentials') ? '' : 'rotate-180'}`}
+              className={`w-5 h-5 text-gray-500 transition-transform ${collapsedSections.has('students') ? '' : 'rotate-180'}`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -863,73 +872,59 @@ export default function TeacherDashboard() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
-          {!collapsedSections.has('credentials') && (
+          {!collapsedSections.has('students') && (
             <div className="px-4 pb-4 space-y-4 border-t border-gray-200">
-              <div className="flex items-center gap-3 pt-4">
-                <label className="text-sm text-gray-600" htmlFor="credential-count">
-                  Number of students:
-                </label>
-                <input
-                  id="credential-count"
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={credentialCount}
-                  onChange={(event) => {
-                    const value = Number(event.target.value);
-                    setCredentialCount(Number.isNaN(value) ? 0 : value);
-                  }}
-                  className="w-20 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-                <button
-                  onClick={() => void handleGenerateCredentials()}
-                  disabled={credentialLoading}
-                  className="text-sm bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg disabled:bg-gray-300 disabled:text-gray-500 transition"
-                >
-                  {credentialLoading ? 'Generating...' : 'Generate'}
-                </button>
+              <div className="pt-4 space-y-1">
+                <p className="text-sm text-gray-700">
+                  Students join with the classroom code. Review nicknames and remove any that are inappropriate.
+                </p>
+                <p className="text-xs text-gray-500">
+                  Removing a name will immediately sign the student out and prompt them to choose a new one.
+                </p>
               </div>
-              {credentialError ? (
+              {studentsError ? (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {credentialError}
+                  {studentsError}
                 </div>
               ) : null}
-              {credentials.length > 0 ? (
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <p className="text-xs text-gray-600">Each username and password is 6 characters (lowercase letters and numbers).</p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => void handleDownloadCredentials()}
-                        className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-md transition"
-                      >
-                        Download CSV
-                      </button>
-                    </div>
-                  </div>
-                  <div className="overflow-x-auto rounded-lg border border-gray-200">
-                    <table className="min-w-full divide-y divide-gray-200 text-sm">
-                      <thead className="bg-purple-50">
-                        <tr>
-                          <th className="px-4 py-2 text-left font-semibold text-gray-700">#</th>
-                          <th className="px-4 py-2 text-left font-semibold text-gray-700">Username</th>
-                          <th className="px-4 py-2 text-left font-semibold text-gray-700">Password</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {credentials.map((credential, index) => (
-                          <tr key={credential.username} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                            <td className="px-4 py-2 text-gray-600">{index + 1}</td>
-                            <td className="px-4 py-2 font-mono text-gray-900">{credential.username}</td>
-                            <td className="px-4 py-2 font-mono text-gray-900">{credential.password}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+              {students.length === 0 ? (
+                <p className="text-sm text-gray-600">No students have joined yet.</p>
               ) : (
-                <p className="text-sm text-gray-600">No credentials generated yet.</p>
+                <div className="space-y-3">
+                  {students.map((student) => (
+                    <div
+                      key={student.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3"
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">{student.username}</p>
+                        <p className="text-xs text-gray-600">Joined {formatTimestamp(student.createdAt)}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                            student.status === 'ACTIVE'
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-gray-200 text-gray-700'
+                          }`}
+                        >
+                          {student.status === 'ACTIVE' ? 'Active' : 'Removed'}
+                        </span>
+                        {student.status === 'ACTIVE' ? (
+                          <button
+                            onClick={() => void handleKickStudent(student.id)}
+                            disabled={studentActionId === student.id}
+                            className="text-xs bg-red-100 hover:bg-red-200 text-red-700 px-3 py-2 rounded-md transition disabled:opacity-60"
+                          >
+                            {studentActionId === student.id ? 'Removing...' : 'Reject name'}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-gray-500">Waiting for rename</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { getSessionFromCookies } from '@/lib/session';
+import { getSessionFromCookies, requireActiveStudent } from '@/lib/session';
 
 const messageSchema = z.object({
   content: z.string().trim().min(1, 'Message cannot be empty').max(4000, 'Message is too long'),
@@ -104,6 +104,14 @@ export async function GET(_: Request, context: unknown) {
     return NextResponse.json({ message: 'Student access required.' }, { status: 403 });
   }
 
+  const studentStatus = await requireActiveStudent(sessionId, studentId);
+  if (!studentStatus.active) {
+    return NextResponse.json(
+      { message: 'You were removed from the classroom. Please rejoin with a new name.' },
+      { status: 403 },
+    );
+  }
+
   const session = await prisma.session.findUnique({
     where: { id: sessionId },
     select: {
@@ -167,6 +175,14 @@ export async function POST(request: Request, context: unknown) {
 
     if (!sessionId || role !== 'student' || !studentId) {
       return NextResponse.json({ message: 'Student access required.' }, { status: 403 });
+    }
+
+    const studentStatus = await requireActiveStudent(sessionId, studentId);
+    if (!studentStatus.active) {
+      return NextResponse.json(
+        { message: 'You were removed from the classroom. Please rejoin with a new name.' },
+        { status: 403 },
+      );
     }
 
     const session = await prisma.session.findUnique({

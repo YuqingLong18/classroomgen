@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { SubmissionStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { getSessionFromCookies } from '@/lib/session';
+import { getSessionFromCookies, requireActiveStudent } from '@/lib/session';
 
 const bodySchema = z.object({
   submissionId: z.string().cuid(),
@@ -23,6 +23,14 @@ export async function POST(request: Request) {
 
     const payload = await request.json();
     const { submissionId, content } = bodySchema.parse(payload);
+
+    const status = await requireActiveStudent(sessionId, studentId);
+    if (!status.active) {
+      return NextResponse.json(
+        { message: 'You were removed from the classroom. Please rejoin with a new name.' },
+        { status: 403 },
+      );
+    }
 
     const submission = await prisma.promptSubmission.findUnique({
       where: { id: submissionId },

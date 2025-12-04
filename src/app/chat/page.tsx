@@ -58,8 +58,7 @@ export default function StudentChatPage() {
   const [session, setSession] = useState<SessionState | null>(null);
   const [initializing, setInitializing] = useState(true);
   const [classroomCode, setClassroomCode] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [studentName, setStudentName] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
   const [chatDisabled, setChatDisabled] = useState(false);
@@ -87,6 +86,7 @@ export default function StudentChatPage() {
         setThreads([]);
         setSelectedThreadId(null);
         setMessages([]);
+        setAuthError(null);
         return;
       }
       const data = await res.json();
@@ -99,12 +99,16 @@ export default function StudentChatPage() {
           setMessages([]);
         }
         setSession(data.session);
+        setAuthError(null);
       } else {
         setSession(null);
         setChatDisabled(false);
         setThreads([]);
         setSelectedThreadId(null);
         setMessages([]);
+        if (data.studentRemoved) {
+          setAuthError('You were removed from the classroom. Enter a new name to rejoin.');
+        }
       }
     } catch (error) {
       console.error('Failed to load session', error);
@@ -113,6 +117,7 @@ export default function StudentChatPage() {
       setThreads([]);
       setSelectedThreadId(null);
       setMessages([]);
+      setAuthError(null);
     } finally {
       setInitializing(false);
     }
@@ -189,6 +194,16 @@ export default function StudentChatPage() {
   }, [loadSession]);
 
   useEffect(() => {
+    if (!session?.id || session.role !== 'student') return;
+    const interval = window.setInterval(() => {
+      void loadSession();
+    }, 10000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [session?.id, session?.role, loadSession]);
+
+  useEffect(() => {
     if (session?.id && session.role === 'student' && !chatDisabled) {
       void loadThreads();
     }
@@ -203,18 +218,6 @@ export default function StudentChatPage() {
   }, [selectedThreadId, loadMessages, chatDisabled]);
 
   useEffect(() => {
-    if (!session?.id || session.role !== 'student') {
-      return;
-    }
-    const interval = window.setInterval(() => {
-      void loadSession();
-    }, 15000);
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [session?.id, session?.role, loadSession]);
-
-  useEffect(() => {
     if (chatEndRef.current) {
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
@@ -225,6 +228,10 @@ export default function StudentChatPage() {
       setAuthError('Enter the 8-digit classroom code from your teacher.');
       return;
     }
+    if (studentName.trim().length < 2) {
+      setAuthError('Enter your name to continue.');
+      return;
+    }
     setLoggingIn(true);
     setAuthError(null);
     try {
@@ -232,7 +239,7 @@ export default function StudentChatPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ classroomCode, username: username.trim(), password }),
+        body: JSON.stringify({ classroomCode, name: studentName.trim() }),
       });
 
       if (!res.ok) {
@@ -242,7 +249,7 @@ export default function StudentChatPage() {
       }
 
       setClassroomCode('');
-      setPassword('');
+      setStudentName('');
       await loadSession();
     } catch (error) {
       console.error('Failed to log in', error);
@@ -250,7 +257,7 @@ export default function StudentChatPage() {
     } finally {
       setLoggingIn(false);
     }
-  }, [classroomCode, username, password, loadSession]);
+  }, [classroomCode, studentName, loadSession]);
 
   const handleCreateThread = useCallback(async () => {
     setThreadError(null);
@@ -386,7 +393,7 @@ export default function StudentChatPage() {
           <header className="space-y-2 text-center">
             <h1 className="text-2xl font-semibold text-[var(--color-accent-strong)]">Student Sign In</h1>
             <p className="text-sm text-[var(--color-muted)]">
-              Enter the classroom code, username, and password your teacher provided.
+              Enter the classroom code from your teacher and the name you want them to see.
             </p>
           </header>
           <div className="space-y-4">
@@ -410,36 +417,19 @@ export default function StudentChatPage() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-[var(--color-foreground)]" htmlFor="student-username">
-                Username
+              <label className="text-sm font-medium text-[var(--color-foreground)]" htmlFor="student-name">
+                Your name
               </label>
               <input
-                id="student-username"
+                id="student-name"
                 type="text"
-                autoComplete="username"
-                value={username}
+                autoComplete="off"
+                value={studentName}
                 onChange={(event) => {
-                  setUsername(event.target.value);
+                  setStudentName(event.target.value);
                   setAuthError(null);
                 }}
                 placeholder="Example: SkyBlue42"
-                className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-4 py-3 text-[var(--color-foreground)] placeholder:text-[var(--color-muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-[var(--color-foreground)]" htmlFor="student-password">
-                Password
-              </label>
-              <input
-                id="student-password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) => {
-                  setPassword(event.target.value);
-                  setAuthError(null);
-                }}
-                placeholder="Enter password"
                 className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-4 py-3 text-[var(--color-foreground)] placeholder:text-[var(--color-muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
               />
             </div>
@@ -450,8 +440,7 @@ export default function StudentChatPage() {
             disabled={
               loggingIn ||
               classroomCode.length !== 8 ||
-              username.trim().length === 0 ||
-              password.trim().length === 0
+              studentName.trim().length < 2
             }
             className="w-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-strong)] disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-muted-foreground)] text-white font-medium py-3 rounded-lg transition"
           >

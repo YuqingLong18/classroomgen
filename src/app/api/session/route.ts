@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { StudentStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getSessionFromCookies } from '@/lib/session';
 import { roleCookieName, sessionCookieName, studentCookieName } from '@/lib/auth';
@@ -61,10 +62,17 @@ export async function GET() {
   if (studentId) {
     const record = await prisma.student.findUnique({
       where: { id: studentId },
-      select: { id: true, username: true, sessionId: true },
+      select: { id: true, username: true, sessionId: true, status: true },
     });
 
     if (record && record.sessionId === session.id) {
+      if (record.status !== StudentStatus.ACTIVE) {
+        const response = NextResponse.json({ session: null, studentRemoved: true });
+        response.cookies.delete(sessionCookieName);
+        response.cookies.delete(roleCookieName);
+        response.cookies.delete(studentCookieName);
+        return response;
+      }
       student = { id: record.id, username: record.username };
     } else {
       const response = NextResponse.json({ session: null });

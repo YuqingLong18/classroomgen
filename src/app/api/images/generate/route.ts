@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { getSessionFromCookies } from '@/lib/session';
+import { getSessionFromCookies, requireActiveStudent } from '@/lib/session';
 import { SubmissionStatus } from '@prisma/client';
 import { enqueueImageGeneration } from '@/lib/imageQueue';
 
@@ -25,6 +25,14 @@ export async function POST(request: Request) {
 
   try {
     const { prompt, parentSubmissionId } = bodySchema.parse(body);
+
+    const studentStatus = await requireActiveStudent(sessionId, studentId);
+    if (!studentStatus.active) {
+      return NextResponse.json(
+        { message: 'You were removed from the classroom. Please rejoin with a new name.' },
+        { status: 403 },
+      );
+    }
 
     const session = await prisma.session.findUnique({
       where: { id: sessionId },

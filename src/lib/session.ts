@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import { SubmissionStatus } from '@prisma/client';
+import { StudentStatus, SubmissionStatus } from '@prisma/client';
 import { prisma } from './prisma';
 import { roleCookieName, sessionCookieName, studentCookieName, UserRole } from './auth';
 
@@ -40,6 +40,23 @@ export async function getSessionFromCookies() {
   const role = cookieStore.get(roleCookieName)?.value as UserRole | undefined;
   const studentId = cookieStore.get(studentCookieName)?.value;
   return { sessionId, role, studentId };
+}
+
+export async function requireActiveStudent(sessionId: string, studentId: string) {
+  const student = await prisma.student.findUnique({
+    where: { id: studentId },
+    select: { id: true, sessionId: true, status: true, username: true },
+  });
+
+  if (!student || student.sessionId !== sessionId) {
+    return { active: false as const, reason: 'not-found' as const, student: null };
+  }
+
+  if (student.status !== StudentStatus.ACTIVE) {
+    return { active: false as const, reason: 'removed' as const, student };
+  }
+
+  return { active: true as const, student };
 }
 
 export async function getSubmissionWithRemainingEdits(submissionId: string) {

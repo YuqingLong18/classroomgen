@@ -58,6 +58,7 @@ interface FetchSubmissionsResponse {
 
 type SessionResponse = {
   session: SessionState | null;
+  studentRemoved?: boolean;
 };
 
 const timestampFormatter = new Intl.DateTimeFormat('en-US', {
@@ -91,8 +92,7 @@ export default function StudentHome() {
   const [session, setSession] = useState<SessionState | null>(null);
   const [initializing, setInitializing] = useState(true);
   const [classroomCode, setClassroomCode] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [studentName, setStudentName] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
   const [prompt, setPrompt] = useState('');
@@ -129,6 +129,11 @@ export default function StudentHome() {
         return;
       }
       setSession(data.session ?? null);
+      if (data.session) {
+        setAuthError(null);
+      } else if (!data.session && data.studentRemoved) {
+        setAuthError('You were removed from the classroom. Enter a new name to rejoin.');
+      }
     } catch (error) {
       console.error('Failed to load session', error);
       if (sessionRequestIdRef.current !== requestId) {
@@ -189,6 +194,16 @@ export default function StudentHome() {
   }, [loadSession]);
 
   useEffect(() => {
+    if (!session?.id || session.role !== 'student') return;
+    const interval = window.setInterval(() => {
+      void loadSession();
+    }, 10000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [session?.id, session?.role, loadSession]);
+
+  useEffect(() => {
     if (session?.id && session.role === 'student') {
       void loadSubmissions();
     }
@@ -220,6 +235,10 @@ export default function StudentHome() {
       setAuthError('Enter the 8-digit classroom code from your teacher.');
       return;
     }
+    if (studentName.trim().length < 2) {
+      setAuthError('Enter your name to join the classroom.');
+      return;
+    }
     setLoggingIn(true);
     setAuthError(null);
     try {
@@ -227,7 +246,7 @@ export default function StudentHome() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ classroomCode, username: username.trim(), password }),
+        body: JSON.stringify({ classroomCode, name: studentName.trim() }),
       });
 
       if (!res.ok) {
@@ -249,7 +268,7 @@ export default function StudentHome() {
       const payload = (await res.json().catch(() => null)) as StudentLoginPayload | null;
 
       setClassroomCode('');
-      setPassword('');
+      setStudentName('');
 
       invalidatePendingSessionLoads();
 
@@ -277,7 +296,7 @@ export default function StudentHome() {
     } finally {
       setLoggingIn(false);
     }
-  }, [classroomCode, username, password, waitForSessionRole, loadSession, invalidatePendingSessionLoads]);
+  }, [classroomCode, studentName, waitForSessionRole, loadSession, invalidatePendingSessionLoads]);
 
   const handleGenerate = useCallback(
     async (parentSubmissionId?: string, promptOverride?: string) => {
@@ -480,7 +499,7 @@ export default function StudentHome() {
           <header className="space-y-2 text-center">
             <h1 className="text-2xl font-semibold text-[var(--color-accent-strong)]">Student Sign In</h1>
             <p className="text-sm text-[var(--color-muted)]">
-              Enter the classroom code, username, and password your teacher provided for today&apos;s class.
+              Enter the classroom code from your teacher and the name you want them to see.
             </p>
             {session?.role === 'teacher' ? (
               <p className="text-xs text-[var(--color-muted-foreground)]">
@@ -513,36 +532,19 @@ export default function StudentHome() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-[var(--color-foreground)]" htmlFor="student-username">
-                Username
+              <label className="text-sm font-medium text-[var(--color-foreground)]" htmlFor="student-name">
+                Your name
               </label>
               <input
-                id="student-username"
+                id="student-name"
                 type="text"
-                autoComplete="username"
-                value={username}
+                autoComplete="off"
+                value={studentName}
                 onChange={(event) => {
-                  setUsername(event.target.value);
+                  setStudentName(event.target.value);
                   setAuthError(null);
                 }}
                 placeholder="Example: SkyBlue42"
-                className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-4 py-3 text-[var(--color-foreground)] placeholder:text-[var(--color-muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-[var(--color-foreground)]" htmlFor="student-password">
-                Password
-              </label>
-              <input
-                id="student-password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) => {
-                  setPassword(event.target.value);
-                  setAuthError(null);
-                }}
-                placeholder="Enter password"
                 className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-4 py-3 text-[var(--color-foreground)] placeholder:text-[var(--color-muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
               />
             </div>
@@ -553,8 +555,7 @@ export default function StudentHome() {
             disabled={
               loggingIn ||
               classroomCode.length !== 8 ||
-              username.trim().length === 0 ||
-              password.trim().length === 0
+              studentName.trim().length < 2
             }
             className="w-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-strong)] disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-muted)] text-white font-medium py-3 rounded-lg transition"
           >
