@@ -55,20 +55,29 @@ export async function POST(request: Request) {
       );
     }
 
-    const student =
-      existing ??
-      (await prisma.student.create({
-        data: {
-          username: studentName,
-          passwordHash: null,
-          status: StudentStatus.ACTIVE,
-          sessionId: session.id,
-        },
-        select: {
-          id: true,
-          username: true,
-        },
-      }));
+    // Enforce strict nickname uniqueness - reject if nickname is already taken
+    if (existing?.status === StudentStatus.ACTIVE) {
+      return NextResponse.json(
+        { message: 'That nickname is already taken. Please choose a different name.' },
+        { status: 409 }, // 409 Conflict
+      );
+    }
+
+    // Always create a new student record (never reuse existing ones)
+    const student = await prisma.student.create({
+      data: {
+        username: studentName,
+        passwordHash: null,
+        status: StudentStatus.ACTIVE,
+        sessionId: session.id,
+      },
+      select: {
+        id: true,
+        username: true,
+      },
+    });
+
+    console.log(`Student login: ${studentName} (ID: ${student.id}) joined session ${session.classroomCode}`);
 
     const response = NextResponse.json({
       sessionId: session.id,

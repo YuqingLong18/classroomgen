@@ -99,6 +99,7 @@ model Student {
   submissionComments SubmissionComment[]
 
   @@unique([sessionId, username])
+  @@index([sessionId, status])
 }
 
 model ChatThread {

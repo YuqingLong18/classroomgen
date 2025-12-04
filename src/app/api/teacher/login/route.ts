@@ -49,6 +49,8 @@ export async function POST(request: Request) {
 
     const externalUsername = authResult.user.username;
 
+    console.log(`Teacher login attempt: ${externalUsername}`);
+
     // Find or create teacher record in local database (for session management)
     let teacher = await prisma.teacher.findUnique({
       where: { username: externalUsername },
@@ -132,6 +134,9 @@ export async function POST(request: Request) {
       },
     });
 
+    // IMPORTANT: Clear student cookies FIRST to prevent conflicts
+    response.cookies.delete(studentCookieName);
+
     response.cookies.set(sessionCookieName, session.id, {
       httpOnly: true,
       sameSite: 'lax',
@@ -144,7 +149,8 @@ export async function POST(request: Request) {
       path: '/',
       maxAge: 60 * 60 * 6,
     });
-    response.cookies.delete(studentCookieName);
+
+    console.log(`Teacher ${teacher.username} logged in, session: ${session.classroomCode}`);
 
     return response;
   } catch (error) {

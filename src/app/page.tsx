@@ -499,7 +499,7 @@ export default function StudentHome() {
           <header className="space-y-2 text-center">
             <h1 className="text-2xl font-semibold text-[var(--color-accent-strong)]">Student Sign In</h1>
             <p className="text-sm text-[var(--color-muted)]">
-              Enter the classroom code from your teacher and the name you want them to see.
+              Enter the classroom code from your teacher and choose a unique nickname. If your nickname is taken, try adding a number or emoji!
             </p>
             {session?.role === 'teacher' ? (
               <p className="text-xs text-[var(--color-muted-foreground)]">
@@ -692,169 +692,167 @@ export default function StudentHome() {
                     <div className="space-y-6">
                       {chain.map((submission) => (
                         <div key={submission.id} className="space-y-3">
-                        <div className="relative overflow-hidden rounded-xl border border-[var(--color-border)]">
-                          {submission.status === 'PENDING' ? (
-                            <div className="h-64 flex flex-col items-center justify-center gap-3 text-[var(--color-muted-foreground)]">
-                              <div className="animate-spin rounded-full h-8 w-8 border-2 border-[var(--color-accent)] border-t-transparent"></div>
-                              <span className="text-sm">Generating image...</span>
-                            </div>
-                          ) : submission.imageData ? (
-                            <div className="relative aspect-[4/3] w-full">
-                              <Image
-                                src={`data:${submission.imageMimeType ?? 'image/png'};base64,${submission.imageData}`}
-                                alt={submission.prompt}
-                                fill
-                                sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
-                                unoptimized
-                                className="object-cover"
-                              />
-                            </div>
-                          ) : (
-                            <div className="h-64 flex items-center justify-center text-[var(--color-muted-foreground)]">
-                              {submission.status === 'ERROR' ? (
-                                <span className="text-sm text-rose-300">Error: {submission.errorMessage ?? 'Image generation failed'}</span>
-                              ) : (
-                                <span className="text-sm">Image unavailable</span>
-                              )}
-                            </div>
-                          )}
-                          <div className="absolute top-3 right-3 text-xs bg-[var(--color-surface)]/80 px-3 py-1 rounded-full text-[var(--color-muted)]">
-                            {submission.revisionIndex === 0 ? 'Original' : `Refinement ${submission.revisionIndex}`}
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className="text-xs font-medium text-[var(--color-muted-foreground)]">
-                            Created at {toDisplayTime(submission.createdAt)}
-                          </span>
-                          {submission.status === 'SUCCESS' ? (
-                            <span className="text-xs font-semibold text-[var(--color-accent-strong)] bg-[var(--color-accent-soft)] px-3 py-1 rounded-full">
-                              {submission.remainingEdits} refinements left
-                            </span>
-                          ) : null}
-                          {submission.status === 'ERROR' ? (
-                            <span className="text-xs font-semibold text-rose-700 bg-rose-100 px-3 py-1 rounded-full">
-                              {submission.errorMessage ?? 'Generation failed'}
-                            </span>
-                          ) : null}
-                          {submission.status === 'SUCCESS' && submission.isShared ? (
-                            <span className="text-xs font-semibold text-[var(--color-accent)] bg-[var(--color-accent-soft)] px-3 py-1 rounded-full">
-                              Shared
-                            </span>
-                          ) : null}
-                        </div>
-                        {submission.status === 'SUCCESS' ? (
-                          <div className="flex flex-wrap gap-3">
-                            <button
-                              onClick={() => downloadImage(submission)}
-                              className="text-sm font-medium text-[var(--color-muted)] border border-[var(--color-border)] rounded-lg px-3 py-2 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-foreground)] transition"
-                            >
-                              Download
-                            </button>
-                            {submission.ownedByCurrentUser ? (
-                              <button
-                                onClick={() => void handleShareToggle(submission.id, !submission.isShared)}
-                                disabled={shareUpdatingId === submission.id}
-                                className={`text-sm font-medium rounded-lg px-3 py-2 transition border ${
-                                  submission.isShared
-                                    ? 'border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-accent-soft)] hover:bg-[var(--color-accent-soft)]/80'
-                                    : 'border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]'
-                                } disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-muted)]`}
-                              >
-                                {shareUpdatingId === submission.id
-                                  ? 'Saving...'
-                                  : submission.isShared
-                                    ? 'Unshare'
-                                    : 'Share with class'}
-                              </button>
-                            ) : null}
-                            {submission.ownedByCurrentUser && submission.remainingEdits > 0 ? (
-                              <RefineButton
-                                key={`${submission.id}-refine`}
-                                submission={submission}
-                                onRefine={handleGenerate}
-                                disabled={generatingId !== null}
-                              />
-                            ) : null}
-                          </div>
-                        ) : null}
-                        {submission.status === 'SUCCESS' ? (
-                          <div className="space-y-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
-                            <div className="flex items-center justify-between gap-3">
-                              <button
-                                onClick={() => void handleToggleLike(submission.id, !submission.likedByCurrentUser)}
-                                disabled={likingId === submission.id || !submission.isShared}
-                                className={`text-sm font-medium px-4 py-2 rounded-lg transition ${
-                                  submission.likedByCurrentUser
-                                    ? 'bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-strong)]'
-                                    : 'border border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] disabled:hover:bg-[var(--color-surface-subtle)]'
-                                } ${!submission.isShared ? 'opacity-60 cursor-not-allowed' : ''}`}
-                              >
-                                {likingId === submission.id
-                                  ? 'Saving...'
-                                  : submission.likedByCurrentUser
-                                    ? 'Unlike'
-                                    : 'Like'}
-                              </button>
-                              <span className="text-sm text-[var(--color-muted)]">
-                                {submission.likeCount} {submission.likeCount === 1 ? 'like' : 'likes'}
-                              </span>
-                            </div>
-                            {submission.isShared ? (
-                              <div className="space-y-3">
-                                <div className="space-y-2">
-                                  {submission.comments.length === 0 ? (
-                                    <p className="text-sm text-[var(--color-muted-foreground)]">No comments yet. Be the first to respond.</p>
-                                  ) : (
-                                    submission.comments.map((comment) => (
-                                      <div key={comment.id} className="space-y-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
-                                        <div className="flex items-center justify-between text-xs text-[var(--color-muted-foreground)]">
-                                          <span className="font-medium text-[var(--color-muted)]">
-                                            {comment.ownedByCurrentUser
-                                              ? 'You'
-                                              : comment.studentUsername ?? 'Classmate'}
-                                          </span>
-                                          <span>{toDisplayTime(comment.createdAt)}</span>
-                                        </div>
-                                        <p className="text-sm text-[var(--color-foreground)]">{comment.content}</p>
-                                      </div>
-                                    ))
-                                  )}
-                                </div>
-                                <div className="space-y-2">
-                                  <textarea
-                                    value={commentDrafts[submission.id] ?? ''}
-                                    onChange={(event) => {
-                                      const value = event.target.value;
-                                      setCommentDrafts((prev) => ({ ...prev, [submission.id]: value }));
-                                      if (commentErrors[submission.id]) {
-                                        setCommentErrors((prev) => ({ ...prev, [submission.id]: null }));
-                                      }
-                                    }}
-                                    placeholder="Add a comment for your classmates"
-                                    className="w-full min-h-20 rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
-                                    disabled={commentSubmittingId === submission.id}
-                                  />
-                                  {commentErrors[submission.id] ? (
-                                    <p className="text-xs text-rose-600">{commentErrors[submission.id]}</p>
-                                  ) : null}
-                                  <div className="flex justify-end">
-                                    <button
-                                      onClick={() => void handleAddComment(submission.id)}
-                                      disabled={commentSubmittingId === submission.id}
-                                      className="text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-strong)] disabled:bg-[var(--color-surface-muted)] rounded-lg px-4 py-2 transition"
-                                    >
-                                      {commentSubmittingId === submission.id ? 'Posting...' : 'Post comment'}
-                                    </button>
-                                  </div>
-                                </div>
+                          <div className="relative overflow-hidden rounded-xl border border-[var(--color-border)]">
+                            {submission.status === 'PENDING' ? (
+                              <div className="h-64 flex flex-col items-center justify-center gap-3 text-[var(--color-muted-foreground)]">
+                                <div className="animate-spin rounded-full h-8 w-8 border-2 border-[var(--color-accent)] border-t-transparent"></div>
+                                <span className="text-sm">Generating image...</span>
+                              </div>
+                            ) : submission.imageData ? (
+                              <div className="relative aspect-[4/3] w-full">
+                                <Image
+                                  src={`data:${submission.imageMimeType ?? 'image/png'};base64,${submission.imageData}`}
+                                  alt={submission.prompt}
+                                  fill
+                                  sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
+                                  unoptimized
+                                  className="object-cover"
+                                />
                               </div>
                             ) : (
-                              <p className="text-xs text-[var(--color-muted-foreground)] italic">
-                                Only you can see this image right now. Share it to let classmates like and comment.
-                              </p>
+                              <div className="h-64 flex items-center justify-center text-[var(--color-muted-foreground)]">
+                                {submission.status === 'ERROR' ? (
+                                  <span className="text-sm text-rose-300">Error: {submission.errorMessage ?? 'Image generation failed'}</span>
+                                ) : (
+                                  <span className="text-sm">Image unavailable</span>
+                                )}
+                              </div>
                             )}
+                            <div className="absolute top-3 right-3 text-xs bg-[var(--color-surface)]/80 px-3 py-1 rounded-full text-[var(--color-muted)]">
+                              {submission.revisionIndex === 0 ? 'Original' : `Refinement ${submission.revisionIndex}`}
+                            </div>
                           </div>
-                        ) : null}
+                          <div className="flex flex-wrap items-center gap-3">
+                            <span className="text-xs font-medium text-[var(--color-muted-foreground)]">
+                              Created at {toDisplayTime(submission.createdAt)}
+                            </span>
+                            {submission.status === 'SUCCESS' ? (
+                              <span className="text-xs font-semibold text-[var(--color-accent-strong)] bg-[var(--color-accent-soft)] px-3 py-1 rounded-full">
+                                {submission.remainingEdits} refinements left
+                              </span>
+                            ) : null}
+                            {submission.status === 'ERROR' ? (
+                              <span className="text-xs font-semibold text-rose-700 bg-rose-100 px-3 py-1 rounded-full">
+                                {submission.errorMessage ?? 'Generation failed'}
+                              </span>
+                            ) : null}
+                            {submission.status === 'SUCCESS' && submission.isShared ? (
+                              <span className="text-xs font-semibold text-[var(--color-accent)] bg-[var(--color-accent-soft)] px-3 py-1 rounded-full">
+                                Shared
+                              </span>
+                            ) : null}
+                          </div>
+                          {submission.status === 'SUCCESS' ? (
+                            <div className="flex flex-wrap gap-3">
+                              <button
+                                onClick={() => downloadImage(submission)}
+                                className="text-sm font-medium text-[var(--color-muted)] border border-[var(--color-border)] rounded-lg px-3 py-2 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-foreground)] transition"
+                              >
+                                Download
+                              </button>
+                              {submission.ownedByCurrentUser ? (
+                                <button
+                                  onClick={() => void handleShareToggle(submission.id, !submission.isShared)}
+                                  disabled={shareUpdatingId === submission.id}
+                                  className={`text-sm font-medium rounded-lg px-3 py-2 transition border ${submission.isShared
+                                      ? 'border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-accent-soft)] hover:bg-[var(--color-accent-soft)]/80'
+                                      : 'border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]'
+                                    } disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-muted)]`}
+                                >
+                                  {shareUpdatingId === submission.id
+                                    ? 'Saving...'
+                                    : submission.isShared
+                                      ? 'Unshare'
+                                      : 'Share with class'}
+                                </button>
+                              ) : null}
+                              {submission.ownedByCurrentUser && submission.remainingEdits > 0 ? (
+                                <RefineButton
+                                  key={`${submission.id}-refine`}
+                                  submission={submission}
+                                  onRefine={handleGenerate}
+                                  disabled={generatingId !== null}
+                                />
+                              ) : null}
+                            </div>
+                          ) : null}
+                          {submission.status === 'SUCCESS' ? (
+                            <div className="space-y-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4">
+                              <div className="flex items-center justify-between gap-3">
+                                <button
+                                  onClick={() => void handleToggleLike(submission.id, !submission.likedByCurrentUser)}
+                                  disabled={likingId === submission.id || !submission.isShared}
+                                  className={`text-sm font-medium px-4 py-2 rounded-lg transition ${submission.likedByCurrentUser
+                                      ? 'bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-strong)]'
+                                      : 'border border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] disabled:hover:bg-[var(--color-surface-subtle)]'
+                                    } ${!submission.isShared ? 'opacity-60 cursor-not-allowed' : ''}`}
+                                >
+                                  {likingId === submission.id
+                                    ? 'Saving...'
+                                    : submission.likedByCurrentUser
+                                      ? 'Unlike'
+                                      : 'Like'}
+                                </button>
+                                <span className="text-sm text-[var(--color-muted)]">
+                                  {submission.likeCount} {submission.likeCount === 1 ? 'like' : 'likes'}
+                                </span>
+                              </div>
+                              {submission.isShared ? (
+                                <div className="space-y-3">
+                                  <div className="space-y-2">
+                                    {submission.comments.length === 0 ? (
+                                      <p className="text-sm text-[var(--color-muted-foreground)]">No comments yet. Be the first to respond.</p>
+                                    ) : (
+                                      submission.comments.map((comment) => (
+                                        <div key={comment.id} className="space-y-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+                                          <div className="flex items-center justify-between text-xs text-[var(--color-muted-foreground)]">
+                                            <span className="font-medium text-[var(--color-muted)]">
+                                              {comment.ownedByCurrentUser
+                                                ? 'You'
+                                                : comment.studentUsername ?? 'Classmate'}
+                                            </span>
+                                            <span>{toDisplayTime(comment.createdAt)}</span>
+                                          </div>
+                                          <p className="text-sm text-[var(--color-foreground)]">{comment.content}</p>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                  <div className="space-y-2">
+                                    <textarea
+                                      value={commentDrafts[submission.id] ?? ''}
+                                      onChange={(event) => {
+                                        const value = event.target.value;
+                                        setCommentDrafts((prev) => ({ ...prev, [submission.id]: value }));
+                                        if (commentErrors[submission.id]) {
+                                          setCommentErrors((prev) => ({ ...prev, [submission.id]: null }));
+                                        }
+                                      }}
+                                      placeholder="Add a comment for your classmates"
+                                      className="w-full min-h-20 rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
+                                      disabled={commentSubmittingId === submission.id}
+                                    />
+                                    {commentErrors[submission.id] ? (
+                                      <p className="text-xs text-rose-600">{commentErrors[submission.id]}</p>
+                                    ) : null}
+                                    <div className="flex justify-end">
+                                      <button
+                                        onClick={() => void handleAddComment(submission.id)}
+                                        disabled={commentSubmittingId === submission.id}
+                                        className="text-sm font-medium text-white bg-[var(--color-accent)] hover:bg-[var(--color-accent-strong)] disabled:bg-[var(--color-surface-muted)] rounded-lg px-4 py-2 transition"
+                                      >
+                                        {commentSubmittingId === submission.id ? 'Posting...' : 'Post comment'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-[var(--color-muted-foreground)] italic">
+                                  Only you can see this image right now. Share it to let classmates like and comment.
+                                </p>
+                              )}
+                            </div>
+                          ) : null}
                         </div>
                       ))}
                     </div>
