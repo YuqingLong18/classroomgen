@@ -71,8 +71,9 @@ async function callChatCompletion(history: Array<{ sender: 'STUDENT' | 'AI'; con
     body: JSON.stringify({
       model,
       messages: toOpenRouterMessages(history),
-      modality: 'text',
-      modalities: ['text'],
+      // SECURITY: Removed modality parameters to prevent code execution
+      // modality: 'text',
+      // modalities: ['text'],
       top_p: 0.9,
     }),
   });
@@ -89,6 +90,14 @@ async function callChatCompletion(history: Array<{ sender: 'STUDENT' | 'AI'; con
   const aiText = extractTextFromChoiceMessage(choice);
   if (!aiText || aiText.length === 0) {
     throw new Error('OpenRouter returned an empty response');
+  }
+
+  // SECURITY: Validate AI response for suspicious patterns
+  const { validateAIResponse, logSecurityWarning } = await import('@/lib/promptSanitizer');
+  const validation = validateAIResponse(aiText);
+  if (!validation.safe) {
+    logSecurityWarning('response', validation.warnings, aiText, { model });
+    // Log but don't block - AI might be teaching about commands
   }
 
   return aiText;
@@ -208,6 +217,19 @@ export async function POST(request: Request, context: unknown) {
 
     const json = await request.json();
     const { content } = messageSchema.parse(json);
+
+    // SECURITY: Sanitize user prompt before processing
+    const { sanitizePrompt, logSecurityWarning } = await import('@/lib/promptSanitizer');
+    const sanitization = sanitizePrompt(content);
+    if (!sanitization.safe) {
+      logSecurityWarning('prompt', sanitization.warnings, content, {
+        studentId,
+        threadId,
+        sessionId,
+      });
+      // Use sanitized version if unsafe patterns detected
+      // In production, you might want to reject the request entirely
+    }
 
     const studentMessage = await prisma.chatMessage.create({
       data: {

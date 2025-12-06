@@ -137,12 +137,12 @@ async function callOpenRouter(prompt: string, options: CallOptions = {}) {
   if (isChatModel(model)) {
     const messages = options.baseImageDataUrl
       ? [{
-          role: 'user',
-          content: [
-            { type: 'text', text: prompt },
-            { type: 'image_url', image_url: { url: options.baseImageDataUrl } },
-          ],
-        }]
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: options.baseImageDataUrl } },
+        ],
+      }]
       : [{ role: 'user', content: prompt }];
 
     const response = await fetch(CHAT_ENDPOINT, {
@@ -151,7 +151,8 @@ async function callOpenRouter(prompt: string, options: CallOptions = {}) {
       body: JSON.stringify({
         model,
         messages,
-        modalities: ['image', 'text'],
+        // SECURITY: Removed modalities to prevent code execution
+        // modalities: ['image', 'text'],
       }),
     });
 

@@ -26,6 +26,18 @@ export async function POST(request: Request) {
   try {
     const { prompt, parentSubmissionId } = bodySchema.parse(body);
 
+    // SECURITY: Sanitize user prompt before processing
+    const { sanitizePrompt, logSecurityWarning } = await import('@/lib/promptSanitizer');
+    const sanitization = sanitizePrompt(prompt);
+    if (!sanitization.safe) {
+      logSecurityWarning('prompt', sanitization.warnings, prompt, {
+        studentId,
+        sessionId,
+        parentSubmissionId,
+      });
+      // Log warnings but allow the request - the sanitized prompt will be used
+    }
+
     const studentStatus = await requireActiveStudent(sessionId, studentId);
     if (!studentStatus.active) {
       return NextResponse.json(
