@@ -53,27 +53,23 @@ function extractTextFromChoiceMessage(message: unknown) {
 }
 
 async function callChatCompletion(history: Array<{ sender: 'STUDENT' | 'AI'; content: string }>) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = process.env.VOLCENGINE_API_KEY;
   if (!apiKey) {
-    throw new Error('Missing OpenRouter API key. Set OPENROUTER_API_KEY in your environment.');
+    throw new Error('Missing Volcengine API key. Set VOLCENGINE_API_KEY in your environment.');
   }
 
-  const model = process.env.OPENROUTER_CHAT_MODEL || process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash-preview-09-2025';
+  const model = process.env.VOLCENGINE_CHAT_MODEL || 'doubao-seed-1-6-251015';
+  const CHAT_ENDPOINT = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions';
 
   const response = await fetch(CHAT_ENDPOINT, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000',
-      'X-Title': 'Classroom Assistant Chat',
     },
     body: JSON.stringify({
       model,
       messages: toOpenRouterMessages(history),
-      // SECURITY: Removed modality parameters to prevent code execution
-      // modality: 'text',
-      // modalities: ['text'],
       top_p: 0.9,
     }),
   });
@@ -81,15 +77,15 @@ async function callChatCompletion(history: Array<{ sender: 'STUDENT' | 'AI'; con
   const result = await response.json();
 
   if (!response.ok) {
-    console.error('OpenRouter chat completion error', result);
-    const message = result?.error?.message ?? 'OpenRouter request failed';
+    console.error('Volcengine chat completion error', result);
+    const message = result?.error?.message ?? 'Volcengine request failed';
     throw new Error(message);
   }
 
   const choice = result?.choices?.[0]?.message;
   const aiText = extractTextFromChoiceMessage(choice);
   if (!aiText || aiText.length === 0) {
-    throw new Error('OpenRouter returned an empty response');
+    throw new Error('Volcengine returned an empty response');
   }
 
   // SECURITY: Validate AI response for suspicious patterns

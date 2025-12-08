@@ -110,100 +110,46 @@ class ImageGenerationQueue {
   }
 }
 
-// Import the callOpenRouter function from the generate route
+// Import the callVolcengine function from the generate route
 // We'll need to extract it to a shared module
 async function callOpenRouter(prompt: string, options: CallOptions = {}) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = process.env.VOLCENGINE_API_KEY;
   if (!apiKey) {
-    throw new Error('Missing OpenRouter API key. Set OPENROUTER_API_KEY in your environment.');
+    throw new Error('Missing Volcengine API key. Set VOLCENGINE_API_KEY in your environment.');
   }
 
-  const CHAT_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
-  const IMAGE_ENDPOINT = 'https://openrouter.ai/api/v1/images';
+  const IMAGE_ENDPOINT = 'https://ark.cn-beijing.volces.com/api/v3/images/generations';
+  const model = process.env.VOLCENGINE_IMAGE_MODEL || 'doubao-seedream-4-5-251128';
 
-  const model = process.env.OPENROUTER_IMAGE_MODEL || process.env.OPENROUTER_MODEL || 'openai/gpt-image-1';
   const headers = {
     Authorization: `Bearer ${apiKey}`,
     'Content-Type': 'application/json',
-    'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000',
-    'X-Title': 'Classroom Image Generator',
   };
-
-  function isChatModel(model: string) {
-    const normalized = model.toLowerCase();
-    return normalized.includes('gemini') || normalized.includes('chat') || normalized.startsWith('google/');
-  }
-
-  if (isChatModel(model)) {
-    const messages = options.baseImageDataUrl
-      ? [{
-        role: 'user',
-        content: [
-          { type: 'text', text: prompt },
-          { type: 'image_url', image_url: { url: options.baseImageDataUrl } },
-        ],
-      }]
-      : [{ role: 'user', content: prompt }];
-
-    const response = await fetch(CHAT_ENDPOINT, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model,
-        messages,
-        // SECURITY: Removed modalities to prevent code execution
-        // modalities: ['image', 'text'],
-      }),
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      console.error('OpenRouter chat error', result);
-      const message = result?.error?.message ?? 'OpenRouter chat request failed';
-      throw new Error(message);
-    }
-
-    const dataUrl = extractDataUrlFromMessage(result?.choices?.[0]?.message);
-    if (!dataUrl) {
-      throw new Error('OpenRouter did not return an image link');
-    }
-
-    return fetchImageAsBase64(dataUrl);
-  }
 
   const response = await fetch(IMAGE_ENDPOINT, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ model, prompt }),
+    body: JSON.stringify({
+      model,
+      prompt,
+      size: '1024x1024', // Default size
+    }),
   });
 
   const result = await response.json();
 
   if (!response.ok) {
-    console.error('OpenRouter image error', result);
-    const message = result?.error?.message ?? 'OpenRouter request failed';
+    console.error('Volcengine image error', result);
+    const message = result?.error?.message ?? 'Volcengine request failed';
     throw new Error(message);
   }
 
-  const imagePayload = result?.data?.[0];
-  if (!imagePayload) {
-    throw new Error('OpenRouter did not return image data');
+  const imageUrl = result?.data?.[0]?.url;
+  if (!imageUrl) {
+    throw new Error('Volcengine did not return an image URL');
   }
 
-  const base64 = imagePayload?.b64_json ?? imagePayload?.b64 ?? imagePayload?.image_base64;
-  const url = imagePayload?.url;
-
-  if (base64) {
-    const mimeType = imagePayload?.mime_type ?? 'image/png';
-    return { imageData: base64 as string, mimeType };
-  }
-
-  if (url) {
-    return fetchImageAsBase64(url as string);
-  }
-
-  throw new Error('OpenRouter response missing base64 or URL data');
+  return fetchImageAsBase64(imageUrl);
 }
 
 async function fetchImageAsBase64(urlOrDataUrl: string) {
