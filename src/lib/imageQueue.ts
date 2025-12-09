@@ -83,7 +83,7 @@ class ImageGenerationQueue {
    */
   private async processJob(job: ImageGenerationJob) {
     try {
-      const { imageData, mimeType } = await callOpenRouter(job.prompt, job.options);
+      const { imageData, mimeType } = await callVolcengineImageGeneration(job.prompt, job.options);
 
       await prisma.promptSubmission.update({
         where: { id: job.submissionId },
@@ -113,7 +113,7 @@ class ImageGenerationQueue {
 
 // Import the callVolcengine function from the generate route
 // We'll need to extract it to a shared module
-async function callOpenRouter(prompt: string, options: CallOptions = {}) {
+async function callVolcengineImageGeneration(prompt: string, options: CallOptions = {}) {
   const apiKey = process.env.VOLCENGINE_API_KEY;
   if (!apiKey) {
     throw new Error('Missing Volcengine API key. Set VOLCENGINE_API_KEY in your environment.');
@@ -157,7 +157,7 @@ async function fetchImageAsBase64(urlOrDataUrl: string) {
   if (urlOrDataUrl.startsWith('data:')) {
     const [, meta, data] = urlOrDataUrl.match(/^data:([^;,]+)?(?:;base64)?,(.+)$/) ?? [];
     if (!data) {
-      throw new Error('Invalid data URL in OpenRouter response');
+      throw new Error('Invalid data URL in Volcengine response');
     }
     const mimeType = meta || 'image/png';
     const imageData = urlOrDataUrl.includes(';base64,') ? data : Buffer.from(decodeURIComponent(data)).toString('base64');
@@ -166,86 +166,14 @@ async function fetchImageAsBase64(urlOrDataUrl: string) {
 
   const response = await fetch(urlOrDataUrl);
   if (!response.ok) {
-    throw new Error('Failed to download image from OpenRouter response');
+    throw new Error('Failed to download image from Volcengine response');
   }
   const buffer = Buffer.from(await response.arrayBuffer()).toString('base64');
   const mimeType = response.headers.get('content-type') ?? 'image/png';
   return { imageData: buffer, mimeType };
 }
 
-type OpenRouterImage = string | { url?: string; data_url?: string };
 
-type OpenRouterContentItem =
-  | { type?: 'image_url'; image_url?: OpenRouterImage }
-  | { type?: 'output_image'; image_url?: string; data?: string }
-  | { type?: string; url?: string; data?: string };
-
-type OpenRouterMessage = {
-  images?: Array<{ image_url?: OpenRouterImage }>;
-  content?: OpenRouterContentItem[];
-};
-
-function extractDataUrlFromMessage(message: unknown) {
-  const msg = (message ?? {}) as OpenRouterMessage;
-  const directImage = msg.images?.[0]?.image_url;
-
-  if (typeof directImage === 'string') {
-    return directImage;
-  }
-
-  if (directImage && typeof directImage === 'object') {
-    const nested = directImage.url ?? directImage.data_url;
-    if (typeof nested === 'string') {
-      return nested;
-    }
-  }
-
-  const content = Array.isArray(msg.content) ? msg.content : [];
-  for (const item of content) {
-    if (item?.type === 'image_url' && 'image_url' in item) {
-      const imageUrl = item.image_url;
-      if (typeof imageUrl === 'string') {
-        return imageUrl;
-      }
-      if (imageUrl && typeof imageUrl === 'object') {
-        const url = imageUrl.url ?? (imageUrl as { data_url?: string }).data_url;
-        if (typeof url === 'string') {
-          return url;
-        }
-      }
-    }
-
-    if (item?.type === 'output_image') {
-      if ('image_url' in item && typeof item.image_url === 'string') {
-        return item.image_url;
-      }
-      if ('data' in item && typeof item.data === 'string') {
-        return item.data.startsWith('data:') ? item.data : `data:image/png;base64,${item.data}`;
-      }
-    }
-
-    if ('url' in item && typeof item.url === 'string') {
-      return item.url;
-    }
-
-    if ('data' in item && typeof item.data === 'string') {
-      if (item.data.startsWith('data:')) {
-        return item.data;
-      }
-      if (/^[A-Za-z0-9+/=]+$/.test(item.data)) {
-        return `data:image/png;base64,${item.data}`;
-      }
-    }
-
-    if (item && typeof item === 'object' && 'image_url' in item) {
-      const urlValue = (item as { image_url?: string }).image_url;
-      if (typeof urlValue === 'string') {
-        return urlValue;
-      }
-    }
-  }
-  return null;
-}
 
 // Singleton instance
 const imageQueue = new ImageGenerationQueue();

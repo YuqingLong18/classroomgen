@@ -7,11 +7,10 @@ const messageSchema = z.object({
   content: z.string().trim().min(1, 'Message cannot be empty').max(4000, 'Message is too long'),
 });
 
-const CHAT_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
 const MAX_HISTORY_MESSAGES = 20;
 const CHAT_DISABLED_MESSAGE = 'Chat assistant is currently disabled.';
 
-function toOpenRouterMessages(history: Array<{ sender: 'STUDENT' | 'AI'; content: string }>) {
+function toVolcengineMessages(history: Array<{ sender: 'STUDENT' | 'AI'; content: string }>) {
   return history.map((entry) => ({
     role: entry.sender === 'STUDENT' ? 'user' : 'assistant',
     content: entry.content,
@@ -69,7 +68,7 @@ async function callChatCompletion(history: Array<{ sender: 'STUDENT' | 'AI'; con
     },
     body: JSON.stringify({
       model,
-      messages: toOpenRouterMessages(history),
+      messages: toVolcengineMessages(history),
       top_p: 0.9,
     }),
   });

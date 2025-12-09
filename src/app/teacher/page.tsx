@@ -807,7 +807,7 @@ export default function TeacherDashboard() {
                       : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
                       } ${settingsSaving ? 'opacity-60 cursor-not-allowed' : ''}`}
                   >
-                    {settingsSaving ? t.common.saving : chatEnabledSetting ? t.common.disable : t.common.enable}
+                    {settingsSaving ? t.common.saving : chatEnabledSetting ? t.teacher.disable : t.teacher.enable}
                   </button>
                 </div>
                 <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">

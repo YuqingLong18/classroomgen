@@ -358,7 +358,7 @@ export default function StudentChatPage() {
     }
   }, [messageInput, selectedThreadId]);
 
-  const threadUsage = useMemo(() => `${threads.length}/${threadLimit} chats used`, [threads.length, threadLimit]);
+
 
   if (initializing) {
     return (
@@ -472,7 +472,7 @@ export default function StudentChatPage() {
             <div className="text-sm text-[var(--color-muted-foreground)] text-right space-y-1">
               <p>
                 {t.student.signedInAs}{' '}
-                <span className="font-medium text-[var(--color-foreground)]">{session.student?.username ?? t.student.student}</span>
+                <span className="font-medium text-[var(--color-foreground)]">{session.student?.username ?? t.common.student}</span>
               </p>
               {session.classroomCode ? (
                 <p>
