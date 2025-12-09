@@ -1,4 +1,4 @@
-const fetch = require('node-fetch');
+require('dotenv').config();
 
 async function testVolcengine() {
     const apiKey = process.env.VOLCENGINE_API_KEY;
@@ -43,7 +43,7 @@ async function testVolcengine() {
             body: JSON.stringify({
                 model: process.env.VOLCENGINE_IMAGE_MODEL || 'doubao-seedream-4-5-251128',
                 prompt: 'A cute robot waving hello',
-                size: '1024x1024',
+                size: '2560x1440',
             }),
         });
 

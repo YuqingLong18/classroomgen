@@ -96,6 +96,7 @@ export default function StudentHome() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
   const [prompt, setPrompt] = useState('');
+  const [size, setSize] = useState('2048x2048');
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [fetchingSubmissions, setFetchingSubmissions] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
@@ -316,6 +317,7 @@ export default function StudentHome() {
           body: JSON.stringify({
             prompt: textPrompt,
             parentSubmissionId,
+            size,
           }),
         });
 
@@ -336,7 +338,7 @@ export default function StudentHome() {
         setGeneratingId(null);
       }
     },
-    [prompt, loadSubmissions],
+    [prompt, size, loadSubmissions],
   );
 
   const handleShareToggle = useCallback(
@@ -623,6 +625,22 @@ export default function StudentHome() {
             placeholder="Example: A futuristic city skyline at sunset with flying cars"
             className="w-full min-h-28 rounded-xl border border-[var(--color-border)] bg-[var(--color-input)] px-4 py-3 text-base text-[var(--color-foreground)] placeholder:text-[var(--color-muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
           />
+          <div className="flex items-center gap-3">
+            <label htmlFor="image-size" className="text-sm font-medium text-[var(--color-foreground)]">
+              Image Size:
+            </label>
+            <select
+              id="image-size"
+              value={size}
+              onChange={(e) => setSize(e.target.value)}
+              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
+            >
+              <option value="2048x2048">Square (2048x2048)</option>
+              <option value="2560x1440">Landscape (2560x1440)</option>
+              <option value="1440x2560">Portrait (1440x2560)</option>
+              <option value="4096x4096">Large Square (4096x4096)</option>
+            </select>
+          </div>
           {generateError ? <p className="text-sm text-rose-600">{generateError}</p> : null}
           <div className="flex flex-wrap items-center gap-3 justify-between">
             <button
@@ -755,8 +773,8 @@ export default function StudentHome() {
                                   onClick={() => void handleShareToggle(submission.id, !submission.isShared)}
                                   disabled={shareUpdatingId === submission.id}
                                   className={`text-sm font-medium rounded-lg px-3 py-2 transition border ${submission.isShared
-                                      ? 'border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-accent-soft)] hover:bg-[var(--color-accent-soft)]/80'
-                                      : 'border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]'
+                                    ? 'border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-accent-soft)] hover:bg-[var(--color-accent-soft)]/80'
+                                    : 'border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]'
                                     } disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-muted)]`}
                                 >
                                   {shareUpdatingId === submission.id
@@ -783,8 +801,8 @@ export default function StudentHome() {
                                   onClick={() => void handleToggleLike(submission.id, !submission.likedByCurrentUser)}
                                   disabled={likingId === submission.id || !submission.isShared}
                                   className={`text-sm font-medium px-4 py-2 rounded-lg transition ${submission.likedByCurrentUser
-                                      ? 'bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-strong)]'
-                                      : 'border border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] disabled:hover:bg-[var(--color-surface-subtle)]'
+                                    ? 'bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-strong)]'
+                                    : 'border border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)] disabled:hover:bg-[var(--color-surface-subtle)]'
                                     } ${!submission.isShared ? 'opacity-60 cursor-not-allowed' : ''}`}
                                 >
                                   {likingId === submission.id

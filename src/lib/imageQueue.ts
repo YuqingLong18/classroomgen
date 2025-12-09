@@ -10,6 +10,7 @@ import { SubmissionStatus } from '@prisma/client';
 
 type CallOptions = {
   baseImageDataUrl?: string;
+  size?: string;
 };
 
 type ImageGenerationJob = {
@@ -132,7 +133,7 @@ async function callOpenRouter(prompt: string, options: CallOptions = {}) {
     body: JSON.stringify({
       model,
       prompt,
-      size: '1024x1024', // Default size
+      size: options.size || '2048x2048', // Use provided size or default
     }),
   });
 

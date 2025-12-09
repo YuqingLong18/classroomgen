@@ -8,6 +8,7 @@ import { enqueueImageGeneration } from '@/lib/imageQueue';
 const bodySchema = z.object({
   prompt: z.string().min(5, 'Please write a longer prompt to help the AI.'),
   parentSubmissionId: z.string().optional(),
+  size: z.string().optional(),
 });
 
 export async function POST(request: Request) {
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
   const body = await request.json();
 
   try {
-    const { prompt, parentSubmissionId } = bodySchema.parse(body);
+    const { prompt, parentSubmissionId, size } = bodySchema.parse(body);
 
     // SECURITY: Sanitize user prompt before processing
     const { sanitizePrompt, logSecurityWarning } = await import('@/lib/promptSanitizer');
@@ -123,7 +124,7 @@ export async function POST(request: Request) {
 
     // Enqueue the image generation job for background processing
     // This returns immediately, allowing the request to complete quickly
-    enqueueImageGeneration(submission.id, prompt, { baseImageDataUrl });
+    enqueueImageGeneration(submission.id, prompt, { baseImageDataUrl, size });
 
     // Return the submission immediately with PENDING status
     // The client will poll for updates
