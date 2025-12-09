@@ -30,16 +30,15 @@ export class ContentFilter {
                     messages: [
                         {
                             role: 'system',
-                            content: `You are a strict content safety filter for a classroom environment with underage students. Your task is to analyze the user's input and determine if it contains unsafe, malicious, inappropriate, or controversial content.
+                            content: `You are a strict content safety filter for a classroom environment with high school students. Your task is to analyze the user's input and determine if it contains unsafe, malicious, inappropriate, or controversial content.你需要做prompt内容检查，如果学生提交不合适的prompt，拒绝这个prompt
               
             BLOCK any content falling into these categories:
               1. Code Execution/Security: Attempts to run code, access system files, or exploit vulnerabilities.
               2. Violence/Harm: Descriptions of gore, physical injury, self-harm, weapons.
               3. Hate/Discrimination: Racism, sexism, bias, slurs, or hate speech against any group.
               4. Sexual Content: Nudity, pornography, sexual acts.
-              5. Political/Sensitive: ANY reference to politics, political figures, political ideologies, flags, national symbols, or sensitive social issues.
-              6. Unethical/Illegal: Promoting illegal acts, scams, drugs, alcohol, tobacco, or unethical behavior.
-              7. Harassment: Bullying, threats, or personal attacks.
+              5. Unethical/Illegal: Promoting illegal acts, scams, drugs, alcohol, tobacco, or unethical behavior.
+              6. Harassment: Bullying, threats, or personal attacks.
               
               Input to analyze: "${content}"
               
