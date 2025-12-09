@@ -4,6 +4,9 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StudentNav } from '@/components/student/StudentNav';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { LanguageToggle } from '@/components/LanguageToggle';
+import { TruncatedText } from '@/components/TruncatedText';
 
 interface SessionState {
   id: string;
@@ -88,6 +91,7 @@ function downloadImage(submission: Submission) {
 }
 
 export default function StudentHome() {
+  const { t } = useLanguage();
   const router = useRouter();
   const [session, setSession] = useState<SessionState | null>(null);
   const [initializing, setInitializing] = useState(true);
@@ -108,7 +112,10 @@ export default function StudentHome() {
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [commentErrors, setCommentErrors] = useState<Record<string, string | null>>({});
   const [commentSubmittingId, setCommentSubmittingId] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<{ src: string; prompt: string; mimeType: string | null } | null>(null);
   const sessionRequestIdRef = useRef(0);
+
+  // ... (keep existing useEffects and handlers)
 
   const invalidatePendingSessionLoads = useCallback(() => {
     sessionRequestIdRef.current += 1;
@@ -489,7 +496,7 @@ export default function StudentHome() {
   if (initializing) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-[var(--color-surface-subtle)]">
-        <p className="text-lg text-[var(--color-muted)]">Loading classroom session...</p>
+        <p className="text-lg text-[var(--color-muted)]">{t.common.loading}</p>
       </main>
     );
   }
@@ -499,15 +506,15 @@ export default function StudentHome() {
       <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#ede9fe] via-[#f7f5ff] to-[#ffffff] p-6">
         <div className="max-w-md w-full bg-[var(--color-surface)] shadow-[var(--shadow-soft)] rounded-2xl p-8 space-y-6 border border-[var(--color-border)]/70 backdrop-blur">
           <header className="space-y-2 text-center">
-            <h1 className="text-2xl font-semibold text-[var(--color-accent-strong)]">Student Sign In</h1>
+            <h1 className="text-2xl font-semibold text-[var(--color-accent-strong)]">{t.student.signInTitle}</h1>
             <p className="text-sm text-[var(--color-muted)]">
-              Enter the classroom code from your teacher and choose a unique nickname. If your nickname is taken, try adding a number or emoji!
+              {t.student.signInDesc}
             </p>
             {session?.role === 'teacher' ? (
               <p className="text-xs text-[var(--color-muted-foreground)]">
-                Teacher access is available on the{' '}
+                {t.student.teacherAccess}{' '}
                 <a className="text-[var(--color-accent)] underline" href="/teacher">
-                  dashboard
+                  {t.student.dashboard}
                 </a>
                 .
               </p>
@@ -516,7 +523,7 @@ export default function StudentHome() {
           <div className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-[var(--color-foreground)]" htmlFor="classroom-code">
-                Classroom code
+                {t.student.classroomCode}
               </label>
               <input
                 id="classroom-code"
@@ -529,13 +536,13 @@ export default function StudentHome() {
                   setClassroomCode(digits.slice(0, 8));
                   setAuthError(null);
                 }}
-                placeholder="8-digit code"
+                placeholder={t.student.classroomCodePlaceholder}
                 className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-4 py-3 text-[var(--color-foreground)] placeholder:text-[var(--color-muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
               />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-[var(--color-foreground)]" htmlFor="student-name">
-                Your name
+                {t.student.yourName}
               </label>
               <input
                 id="student-name"
@@ -546,7 +553,7 @@ export default function StudentHome() {
                   setStudentName(event.target.value);
                   setAuthError(null);
                 }}
-                placeholder="Example: SkyBlue42"
+                placeholder={t.student.yourNamePlaceholder}
                 className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-4 py-3 text-[var(--color-foreground)] placeholder:text-[var(--color-muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
               />
             </div>
@@ -561,14 +568,14 @@ export default function StudentHome() {
             }
             className="w-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-strong)] disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-muted)] text-white font-medium py-3 rounded-lg transition"
           >
-            {loggingIn ? 'Signing in...' : 'Enter classroom'}
+            {loggingIn ? t.student.signingIn : t.student.enterClassroom}
           </button>
           <div className="pt-2 border-t border-[var(--color-border)]">
             <button
               onClick={() => router.push('/teacher')}
               className="w-full text-sm border border-[var(--color-border)] text-[var(--color-foreground)] hover:bg-[var(--color-surface-subtle)] font-medium py-2.5 rounded-lg transition"
             >
-              I am a teacher
+              {t.student.iAmTeacher}
             </button>
           </div>
         </div>
@@ -581,30 +588,33 @@ export default function StudentHome() {
       <div className="max-w-6xl mx-auto px-6 py-10 space-y-10">
         <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-2">
-            <StudentNav />
+            <div className="flex items-center gap-4">
+              <StudentNav />
+              <LanguageToggle />
+            </div>
             <div>
-              <h1 className="text-3xl font-semibold text-[var(--color-accent-strong)]">Classroom Image Lab</h1>
+              <h1 className="text-3xl font-semibold text-[var(--color-accent-strong)]">{t.student.headerTitle}</h1>
               <p className="text-sm text-[var(--color-muted)]">
-                Create and refine AI-generated images with your classmates.
+                {t.student.headerDesc}
               </p>
             </div>
           </div>
           <div className="text-sm text-[var(--color-muted-foreground)] text-right space-y-1">
             <p>
-              Signed in as{' '}
+              {t.student.signedInAs}{' '}
               <span className="font-medium text-[var(--color-foreground)]">
                 {session.student?.username ?? 'Student'}
               </span>
             </p>
             <p>
-              Session started at{' '}
+              {t.student.sessionStartedAt}{' '}
               <span className="font-medium text-[var(--color-foreground)]">
                 {toDisplayTime(session.createdAt)}
               </span>
             </p>
             {session.classroomCode ? (
               <p>
-                Classroom code{' '}
+                {t.student.classroomCode}{' '}
                 <span className="font-medium text-[var(--color-foreground)]">{session.classroomCode}</span>
               </p>
             ) : null}
@@ -612,9 +622,9 @@ export default function StudentHome() {
         </header>
 
         <section className="bg-[var(--color-surface)] rounded-2xl shadow-[var(--shadow-soft)] border border-[var(--color-border)] p-6 space-y-4 backdrop-blur-sm">
-          <h2 className="text-xl font-semibold text-[var(--color-foreground)]">Create a new image</h2>
+          <h2 className="text-xl font-semibold text-[var(--color-foreground)]">{t.student.createImageTitle}</h2>
           <p className="text-sm text-[var(--color-muted)]">
-            Describe what you want to see. Try adding colors, settings, and actions to get the best results.
+            {t.student.createImageDesc}
           </p>
           <textarea
             value={prompt}
@@ -622,12 +632,12 @@ export default function StudentHome() {
               setPrompt(event.target.value);
               if (generateError) setGenerateError(null);
             }}
-            placeholder="Example: A futuristic city skyline at sunset with flying cars"
+            placeholder={t.student.promptPlaceholder}
             className="w-full min-h-28 rounded-xl border border-[var(--color-border)] bg-[var(--color-input)] px-4 py-3 text-base text-[var(--color-foreground)] placeholder:text-[var(--color-muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
           />
           <div className="flex items-center gap-3">
             <label htmlFor="image-size" className="text-sm font-medium text-[var(--color-foreground)]">
-              Image Size:
+              {t.student.imageSize}:
             </label>
             <select
               id="image-size"
@@ -635,10 +645,10 @@ export default function StudentHome() {
               onChange={(e) => setSize(e.target.value)}
               className="rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
             >
-              <option value="2048x2048">Square (2048x2048)</option>
-              <option value="2560x1440">Landscape (2560x1440)</option>
-              <option value="1440x2560">Portrait (1440x2560)</option>
-              <option value="4096x4096">Large Square (4096x4096)</option>
+              <option value="2048x2048">{t.student.sizeSquare}</option>
+              <option value="2560x1440">{t.student.sizeLandscape}</option>
+              <option value="1440x2560">{t.student.sizePortrait}</option>
+              <option value="4096x4096">{t.student.sizeLargeSquare}</option>
             </select>
           </div>
           {generateError ? <p className="text-sm text-rose-600">{generateError}</p> : null}
@@ -648,7 +658,7 @@ export default function StudentHome() {
               disabled={generatingId !== null || prompt.trim().length < 5}
               className="inline-flex items-center gap-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-strong)] disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-muted)] text-white font-medium px-5 py-3 rounded-lg transition"
             >
-              {generatingId === 'new' ? 'Generating...' : 'Generate image'}
+              {generatingId === 'new' ? t.student.generating : t.student.generateImage}
             </button>
             <button
               onClick={() => {
@@ -657,7 +667,7 @@ export default function StudentHome() {
               }}
               className="text-sm text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] transition"
             >
-              Clear prompt
+              {t.student.clearPrompt}
             </button>
           </div>
         </section>
@@ -696,8 +706,14 @@ export default function StudentHome() {
                 return (
                   <article key={rootId} className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl shadow-[var(--shadow-soft)] p-5 space-y-5">
                     <header className="space-y-2">
+
+
                       <p className="text-sm text-[var(--color-muted-foreground)]">Started {toDisplayTime(first?.createdAt ?? '')}</p>
-                      <p className="text-base font-medium text-[var(--color-foreground)]">{first?.prompt}</p>
+                      <TruncatedText
+                        text={first?.prompt ?? ''}
+                        lines={5}
+                        className="text-base font-medium text-[var(--color-foreground)]"
+                      />
                       <div className="flex flex-wrap gap-2 text-xs text-[var(--color-muted-foreground)]">
                         <span className="rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 font-medium text-[var(--color-muted)]">
                           Owner: {ownerLabel}
@@ -717,7 +733,14 @@ export default function StudentHome() {
                                 <span className="text-sm">Generating image...</span>
                               </div>
                             ) : submission.imageData ? (
-                              <div className="relative aspect-[4/3] w-full">
+                              <div
+                                className="relative aspect-[4/3] w-full cursor-pointer hover:opacity-95 transition"
+                                onClick={() => setSelectedImage({
+                                  src: `data:${submission.imageMimeType ?? 'image/png'};base64,${submission.imageData}`,
+                                  prompt: submission.prompt,
+                                  mimeType: submission.imageMimeType
+                                })}
+                              >
                                 <Image
                                   src={`data:${submission.imageMimeType ?? 'image/png'};base64,${submission.imageData}`}
                                   alt={submission.prompt}
@@ -880,6 +903,56 @@ export default function StudentHome() {
             </div>
           )}
         </section>
+
+        {/* Image Modal */}
+        {selectedImage && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+            onClick={() => setSelectedImage(null)}
+          >
+            <div
+              className="relative max-w-5xl w-full bg-[var(--color-surface)] rounded-2xl overflow-hidden shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="relative aspect-video bg-[var(--color-surface-subtle)] flex items-center justify-center">
+                <Image
+                  src={selectedImage.src}
+                  alt={selectedImage.prompt}
+                  fill
+                  className="object-contain"
+                  unoptimized
+                />
+              </div>
+              <div className="p-6 bg-[var(--color-surface)] border-t border-[var(--color-border)]">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="font-semibold text-[var(--color-foreground)] text-lg mb-1">{t.student.imageDetails}</h3>
+                    <p className="text-[var(--color-muted)] max-h-60 overflow-y-auto whitespace-pre-wrap">{selectedImage.prompt}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        const link = document.createElement('a');
+                        link.href = selectedImage.src;
+                        link.download = 'classroom-image.png';
+                        link.click();
+                      }}
+                      className="bg-[var(--color-accent)] hover:bg-[var(--color-accent-strong)] text-white px-4 py-2 rounded-lg font-medium transition"
+                    >
+                      {t.common.download}
+                    </button>
+                    <button
+                      onClick={() => setSelectedImage(null)}
+                      className="bg-[var(--color-surface-subtle)] hover:bg-[var(--color-surface-muted)] text-[var(--color-foreground)] px-4 py-2 rounded-lg font-medium transition"
+                    >
+                      {t.common.close}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );

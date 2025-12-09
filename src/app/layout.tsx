@@ -7,6 +7,8 @@ export const metadata: Metadata = {
   description: 'Generate, review, and export classroom-safe AI images.',
 };
 
+import { LanguageProvider } from '@/lib/i18n/LanguageContext';
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -15,7 +17,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased bg-[var(--background)] text-[var(--foreground)]">
-        {children}
+        <LanguageProvider>
+          {children}
+        </LanguageProvider>
       </body>
     </html>
   );

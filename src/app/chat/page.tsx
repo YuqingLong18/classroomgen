@@ -6,6 +6,8 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { StudentNav } from '@/components/student/StudentNav';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { LanguageToggle } from '@/components/LanguageToggle';
 
 interface SessionState {
   id: string;
@@ -55,6 +57,7 @@ function formatTime(iso: string) {
 }
 
 export default function StudentChatPage() {
+  const { t } = useLanguage();
   const [session, setSession] = useState<SessionState | null>(null);
   const [initializing, setInitializing] = useState(true);
   const [classroomCode, setClassroomCode] = useState('');
@@ -338,11 +341,11 @@ export default function StudentChatPage() {
           .map((thread) =>
             thread.id === selectedThreadId
               ? {
-                  ...thread,
-                  updatedAt: newMessages[newMessages.length - 1]?.createdAt ?? thread.updatedAt,
-                  latestMessage: newMessages[newMessages.length - 1]?.content ?? thread.latestMessage,
-                  messageCount: thread.messageCount + newMessages.length,
-                }
+                ...thread,
+                updatedAt: newMessages[newMessages.length - 1]?.createdAt ?? thread.updatedAt,
+                latestMessage: newMessages[newMessages.length - 1]?.content ?? thread.latestMessage,
+                messageCount: thread.messageCount + newMessages.length,
+              }
               : thread,
           )
           .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
@@ -360,7 +363,7 @@ export default function StudentChatPage() {
   if (initializing) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-[var(--color-surface-subtle)] text-[var(--color-muted)]">
-        Loading chat assistant...
+        {t.common.loading}
       </main>
     );
   }
@@ -371,13 +374,13 @@ export default function StudentChatPage() {
         <div className="max-w-xl mx-auto space-y-6">
           <StudentNav />
           <div className="bg-[var(--color-surface)] border border-[var(--color-border)] shadow-[var(--shadow-soft)] rounded-2xl p-10 text-center space-y-4 backdrop-blur">
-            <h1 className="text-2xl font-semibold text-[var(--color-accent-strong)]">Chat assistant is currently turned off</h1>
+            <h1 className="text-2xl font-semibold text-[var(--color-accent-strong)]">{t.student.chatDisabledTitle}</h1>
             <p className="text-sm text-[var(--color-muted)]">
-              Your teacher has paused the AI chat helper for now. You can still explore the image lab while you wait.
+              {t.student.chatDisabledDesc}
             </p>
             {session?.student?.username ? (
               <p className="text-xs text-[var(--color-muted-foreground)]">
-                Signed in as <span className="font-medium text-[var(--color-foreground)]">{session.student.username}</span>
+                {t.student.signedInAs} <span className="font-medium text-[var(--color-foreground)]">{session.student.username}</span>
               </p>
             ) : null}
           </div>
@@ -391,15 +394,15 @@ export default function StudentChatPage() {
       <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#ede9fe] via-[#f7f5ff] to-[#ffffff] p-6">
         <div className="max-w-md w-full bg-[var(--color-surface)] shadow-[var(--shadow-soft)] rounded-2xl p-8 space-y-6 border border-[var(--color-border)] backdrop-blur">
           <header className="space-y-2 text-center">
-            <h1 className="text-2xl font-semibold text-[var(--color-accent-strong)]">Student Sign In</h1>
+            <h1 className="text-2xl font-semibold text-[var(--color-accent-strong)]">{t.student.signInTitle}</h1>
             <p className="text-sm text-[var(--color-muted)]">
-              Enter the classroom code from your teacher and the name you want them to see.
+              {t.student.signInDesc}
             </p>
           </header>
           <div className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-[var(--color-foreground)]" htmlFor="chat-classroom-code">
-                Classroom code
+                {t.student.classroomCode}
               </label>
               <input
                 id="chat-classroom-code"
@@ -412,13 +415,13 @@ export default function StudentChatPage() {
                   setClassroomCode(digits.slice(0, 8));
                   setAuthError(null);
                 }}
-                placeholder="8-digit code"
+                placeholder={t.student.classroomCodePlaceholder}
                 className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-4 py-3 text-[var(--color-foreground)] placeholder:text-[var(--color-muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
               />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-[var(--color-foreground)]" htmlFor="student-name">
-                Your name
+                {t.student.yourName}
               </label>
               <input
                 id="student-name"
@@ -429,7 +432,7 @@ export default function StudentChatPage() {
                   setStudentName(event.target.value);
                   setAuthError(null);
                 }}
-                placeholder="Example: SkyBlue42"
+                placeholder={t.student.yourNamePlaceholder}
                 className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-4 py-3 text-[var(--color-foreground)] placeholder:text-[var(--color-muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
               />
             </div>
@@ -444,7 +447,7 @@ export default function StudentChatPage() {
             }
             className="w-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-strong)] disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-muted-foreground)] text-white font-medium py-3 rounded-lg transition"
           >
-            {loggingIn ? 'Signing in...' : 'Enter classroom'}
+            {loggingIn ? t.student.signingIn : t.student.enterClassroom}
           </button>
         </div>
       </main>
@@ -460,22 +463,27 @@ export default function StudentChatPage() {
           <div className="space-y-2">
             <StudentNav />
             <div>
-              <h1 className="text-3xl font-semibold text-[var(--color-accent-strong)]">Classroom Chat Assistant</h1>
-              <p className="text-sm text-[var(--color-muted)]">Ask questions, brainstorm ideas, and get help from the AI assistant.</p>
+              <h1 className="text-3xl font-semibold text-[var(--color-accent-strong)]">{t.student.navChatAssistant}</h1>
+              <p className="text-sm text-[var(--color-muted)]">{t.student.chatDesc}</p>
             </div>
           </div>
-          <div className="text-sm text-[var(--color-muted-foreground)] text-right space-y-1">
-            <p>
-              Signed in as{' '}
-              <span className="font-medium text-[var(--color-foreground)]">{session.student?.username ?? 'Student'}</span>
-            </p>
-            {session.classroomCode ? (
+          <div className="flex flex-col items-end gap-2">
+            <LanguageToggle />
+            <div className="text-sm text-[var(--color-muted-foreground)] text-right space-y-1">
               <p>
-                Classroom code{' '}
-                <span className="font-medium text-[var(--color-foreground)]">{session.classroomCode}</span>
+                {t.student.signedInAs}{' '}
+                <span className="font-medium text-[var(--color-foreground)]">{session.student?.username ?? t.student.student}</span>
               </p>
-            ) : null}
-            <p className="text-xs uppercase tracking-wide text-[var(--color-muted-foreground)]">{threadUsage}</p>
+              {session.classroomCode ? (
+                <p>
+                  {t.student.classroomCode}{' '}
+                  <span className="font-medium text-[var(--color-foreground)]">{session.classroomCode}</span>
+                </p>
+              ) : null}
+              <p className="text-xs uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                {t.student.chatsUsed.replace('{count}', threads.length.toString()).replace('{limit}', threadLimit.toString())}
+              </p>
+            </div>
           </div>
         </header>
 
@@ -483,16 +491,16 @@ export default function StudentChatPage() {
           <section className="space-y-4">
             <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-4 space-y-4 shadow-[var(--shadow-soft)]">
               <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold text-[var(--color-foreground)]">Your conversations</h2>
+                <h2 className="text-base font-semibold text-[var(--color-foreground)]">{t.student.yourConversations}</h2>
                 <button
                   onClick={() => void handleCreateThread()}
                   disabled={threads.length >= threadLimit}
                   className="text-sm bg-[var(--color-accent)] hover:bg-[var(--color-accent-strong)] disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-muted-foreground)] text-white font-medium px-4 py-2 rounded-lg transition"
                 >
-                  New chat
+                  {t.student.newChat}
                 </button>
               </div>
-              <p className="text-xs text-[var(--color-muted-foreground)]">You can create up to {threadLimit} chats per class.</p>
+              <p className="text-xs text-[var(--color-muted-foreground)]">{t.student.chatsUsed.replace('{count}', threads.length.toString()).replace('{limit}', threadLimit.toString())}</p>
               {threadError ? (
                 <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
                   {threadError}
@@ -500,9 +508,9 @@ export default function StudentChatPage() {
               ) : null}
               <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
                 {threadsLoading ? (
-                  <p className="text-sm text-[var(--color-muted-foreground)]">Loading conversations...</p>
+                  <p className="text-sm text-[var(--color-muted-foreground)]">{t.common.loading}</p>
                 ) : threads.length === 0 ? (
-                  <p className="text-sm text-[var(--color-muted-foreground)]">No conversations yet. Start a chat to begin!</p>
+                  <p className="text-sm text-[var(--color-muted-foreground)]">{t.student.noConversations}</p>
                 ) : (
                   threads.map((thread) => {
                     const isActive = thread.id === selectedThreadId;
@@ -512,19 +520,18 @@ export default function StudentChatPage() {
                         onClick={() => {
                           setSelectedThreadId(thread.id);
                         }}
-                        className={`w-full text-left rounded-xl border px-4 py-3 transition ${
-                          isActive
-                            ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)] shadow-[var(--shadow-soft)]'
-                            : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-subtle)]'
-                        }`}
+                        className={`w-full text-left rounded-xl border px-4 py-3 transition ${isActive
+                          ? 'border-[var(--color-accent)] bg-[var(--color-accent-soft)] shadow-[var(--shadow-soft)]'
+                          : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-subtle)]'
+                          }`}
                       >
                         <p className="text-sm font-semibold text-[var(--color-foreground)] line-clamp-1">{thread.title}</p>
                         <p className="text-xs text-[var(--color-muted-foreground)] line-clamp-2">
-                          {thread.latestMessage ?? 'No messages yet'}
+                          {thread.latestMessage ?? t.teacher.noMessagesInConversation}
                         </p>
                         <div className="mt-2 flex items-center justify-between text-xs text-[var(--color-muted-foreground)]">
                           <span>{formatTime(thread.updatedAt)}</span>
-                          <span>{thread.messageCount} messages</span>
+                          <span>{thread.messageCount} {t.teacher.messages}</span>
                         </div>
                       </button>
                     );
@@ -539,14 +546,14 @@ export default function StudentChatPage() {
               <>
                 <header className="border-b border-[var(--color-border)] px-6 py-4">
                   <h2 className="text-lg font-semibold text-[var(--color-foreground)]">{selectedThread.title}</h2>
-                  <p className="text-xs text-[var(--color-muted-foreground)]">Started {formatTime(selectedThread.createdAt)}</p>
+                  <p className="text-xs text-[var(--color-muted-foreground)]">{t.student.sessionStartedAt} {formatTime(selectedThread.createdAt)}</p>
                 </header>
                 <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4 bg-[var(--color-surface-subtle)]">
                   {messagesLoading ? (
-                    <p className="text-sm text-[var(--color-muted-foreground)]">Loading messages...</p>
+                    <p className="text-sm text-[var(--color-muted-foreground)]">{t.common.loading}</p>
                   ) : messages.length === 0 ? (
                     <div className="text-center text-sm text-[var(--color-muted-foreground)]">
-                      Send a message to start the conversation.
+                      {t.teacher.noMessagesInConversation}
                     </div>
                   ) : (
                     messages.map((message) => {
@@ -554,9 +561,8 @@ export default function StudentChatPage() {
                       return (
                         <div key={message.id} className={`flex ${isStudent ? 'justify-end' : 'justify-start'}`}>
                           <div
-                            className={`markdown-message max-w-[75%] rounded-2xl px-4 py-3 shadow-[var(--shadow-soft)] ${
-                              isStudent ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-surface)] text-[var(--color-foreground)]'
-                            }`}
+                            className={`markdown-message max-w-[75%] rounded-2xl px-4 py-3 shadow-[var(--shadow-soft)] ${isStudent ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-surface)] text-[var(--color-foreground)]'
+                              }`}
                           >
                             <ReactMarkdown
                               remarkPlugins={[remarkGfm, remarkMath]}
@@ -630,25 +636,25 @@ export default function StudentChatPage() {
                         void handleSendMessage();
                       }
                     }}
-                    placeholder="Ask a question or describe what you need help with..."
+                    placeholder={t.student.placeholderMessage}
                     className="w-full min-h-24 rounded-xl border border-[var(--color-border)] bg-[var(--color-input)] px-4 py-3 text-sm text-[var(--color-foreground)] placeholder:text-[var(--color-muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
                   />
                   <div className="flex items-center justify-between">
-                    <p className="text-xs text-[var(--color-muted-foreground)]">Press Enter to send. Shift + Enter for a new line.</p>
+                    <p className="text-xs text-[var(--color-muted-foreground)]">{t.student.pressEnter}</p>
                     <button
                       onClick={() => void handleSendMessage()}
                       disabled={sending || messageInput.trim().length === 0}
                       className="inline-flex items-center gap-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-strong)] disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-muted-foreground)] text-white font-medium px-5 py-2.5 rounded-lg transition"
                     >
-                      {sending ? 'Sending...' : 'Send'}
+                      {sending ? t.student.sending : t.student.sendMessage}
                     </button>
                   </div>
                 </footer>
               </>
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center text-[var(--color-muted-foreground)]">
-                <p className="text-lg font-medium text-[var(--color-foreground)]">Select or create a chat to get started</p>
-                <p className="text-sm">Use the panel on the left to choose a conversation or start a new one.</p>
+                <p className="text-lg font-medium text-[var(--color-foreground)]">{t.student.selectChat}</p>
+                <p className="text-sm">{t.student.selectChatDesc}</p>
               </div>
             )}
           </section>

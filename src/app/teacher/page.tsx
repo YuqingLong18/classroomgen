@@ -127,7 +127,11 @@ function toDisplayTime(iso: string) {
   }
 }
 
+import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { LanguageToggle } from '@/components/LanguageToggle';
+
 export default function TeacherDashboard() {
+  const { t } = useLanguage();
   const [session, setSession] = useState<SessionResponse['session']>(null);
   const [loading, setLoading] = useState(true);
   const [teacherUsername, setTeacherUsername] = useState('');
@@ -265,10 +269,10 @@ export default function TeacherDashboard() {
         setSession((prev) =>
           prev
             ? {
-                ...prev,
-                chatEnabled: activityData.session.chatEnabled,
-                maxStudentEdits: activityData.session.maxStudentEdits,
-              }
+              ...prev,
+              chatEnabled: activityData.session.chatEnabled,
+              maxStudentEdits: activityData.session.maxStudentEdits,
+            }
             : prev,
         );
       }
@@ -513,13 +517,13 @@ export default function TeacherDashboard() {
       setSession((prev) =>
         prev
           ? {
-              ...prev,
-              chatEnabled: resolvedChatEnabled,
-              maxStudentEdits:
-                typeof updated?.maxStudentEdits === 'number'
-                  ? updated.maxStudentEdits
-                  : prev.maxStudentEdits,
-            }
+            ...prev,
+            chatEnabled: resolvedChatEnabled,
+            maxStudentEdits:
+              typeof updated?.maxStudentEdits === 'number'
+                ? updated.maxStudentEdits
+                : prev.maxStudentEdits,
+          }
           : prev,
       );
 
@@ -577,11 +581,11 @@ export default function TeacherDashboard() {
       setSession((prev) =>
         prev
           ? {
-              ...prev,
-              maxStudentEdits: resolvedMaxEdits,
-              chatEnabled:
-                typeof updated?.chatEnabled === 'boolean' ? updated.chatEnabled : prev.chatEnabled,
-            }
+            ...prev,
+            maxStudentEdits: resolvedMaxEdits,
+            chatEnabled:
+              typeof updated?.chatEnabled === 'boolean' ? updated.chatEnabled : prev.chatEnabled,
+          }
           : prev,
       );
 
@@ -644,7 +648,7 @@ export default function TeacherDashboard() {
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-white text-gray-900">
-        <p className="text-lg text-gray-600">Loading teacher dashboard...</p>
+        <p className="text-lg text-gray-600">{t.common.loading}</p>
       </main>
     );
   }
@@ -654,15 +658,15 @@ export default function TeacherDashboard() {
       <main className="min-h-screen bg-white text-gray-900 flex items-center justify-center p-6">
         <div className="w-full max-w-lg space-y-8">
           <header className="space-y-2 text-center">
-            <h1 className="text-3xl font-semibold text-purple-700">Teacher Control Center</h1>
+            <h1 className="text-3xl font-semibold text-purple-700">{t.teacher.controlCenter}</h1>
             <p className="text-sm text-gray-600">
-              Sign in with your assigned teacher credentials to open a fresh classroom and share the code with students.
+              {t.teacher.signInDesc}
             </p>
           </header>
           <section className="bg-purple-50 rounded-2xl p-6 space-y-5 border border-purple-200">
             <div className="space-y-2">
               <label className="text-xs uppercase tracking-wide text-gray-600" htmlFor="teacher-username">
-                Username
+                {t.teacher.username}
               </label>
               <input
                 id="teacher-username"
@@ -679,7 +683,7 @@ export default function TeacherDashboard() {
             </div>
             <div className="space-y-2">
               <label className="text-xs uppercase tracking-wide text-gray-600" htmlFor="teacher-password">
-                Password
+                {t.teacher.password}
               </label>
               <input
                 id="teacher-password"
@@ -704,7 +708,7 @@ export default function TeacherDashboard() {
               disabled={formLoading || teacherUsername.trim().length === 0 || teacherPassword.length === 0}
               className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 rounded-lg transition disabled:bg-gray-300 disabled:text-gray-500"
             >
-              {formLoading ? 'Signing in...' : 'Enter dashboard'}
+              {formLoading ? t.teacher.signingIn : t.teacher.enterDashboard}
             </button>
           </section>
         </div>
@@ -730,13 +734,16 @@ export default function TeacherDashboard() {
         {/* Header */}
         <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between pb-6 border-b border-gray-200">
           <div className="space-y-1">
-            <h1 className="text-2xl font-semibold text-gray-900">Teacher Dashboard</h1>
+            <div className="flex items-center gap-4">
+              <h1 className="text-2xl font-semibold text-gray-900">{t.teacher.dashboardTitle}</h1>
+              <LanguageToggle />
+            </div>
             <p className="text-sm text-gray-600">
-              Hello <span className="font-medium text-gray-900">{teacherDisplayName}</span>.
+              {t.teacher.hello} <span className="font-medium text-gray-900">{teacherDisplayName}</span>.
               {classroomCode ? (
                 <>
                   {' '}
-                  Classroom code:{' '}
+                  {t.teacher.classroomCode}:{' '}
                   <span className="font-mono tracking-wider text-lg text-purple-600 font-semibold">{classroomCode}</span>
                 </>
               ) : null}
@@ -747,7 +754,7 @@ export default function TeacherDashboard() {
               onClick={() => void loadActivity()}
               className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition"
             >
-              {refreshing ? 'Refreshing...' : 'Refresh'}
+              {refreshing ? t.common.loading : t.common.refresh}
             </button>
             <button
               onClick={() => {
@@ -755,13 +762,13 @@ export default function TeacherDashboard() {
               }}
               className="text-sm bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition"
             >
-              Export PDF
+              {t.teacher.exportPdf}
             </button>
             <button
               onClick={() => void handleEndSession()}
               className="text-sm bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition"
             >
-              End Session
+              {t.teacher.endSession}
             </button>
           </div>
         </header>
@@ -772,7 +779,7 @@ export default function TeacherDashboard() {
             onClick={() => toggleSection('settings')}
             className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition"
           >
-            <h2 className="text-lg font-semibold text-gray-900">Session Settings</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{t.teacher.sessionSettings}</h2>
             <svg
               className={`w-5 h-5 text-gray-500 transition-transform ${collapsedSections.has('settings') ? '' : 'rotate-180'}`}
               fill="none"
@@ -787,21 +794,20 @@ export default function TeacherDashboard() {
               <div className="grid gap-4 md:grid-cols-2 pt-4">
                 <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
                   <div>
-                    <p className="text-xs uppercase tracking-wide text-gray-600">Chat assistant</p>
+                    <p className="text-xs uppercase tracking-wide text-gray-600">{t.teacher.chatAssistant}</p>
                     <p className="text-sm text-gray-900">
-                      {chatEnabledSetting ? 'Enabled' : 'Disabled'}
+                      {chatEnabledSetting ? t.teacher.enabled : t.teacher.disabled}
                     </p>
                   </div>
                   <button
                     onClick={() => void handleToggleChatAssistant()}
                     disabled={settingsSaving}
-                    className={`text-xs font-semibold px-3 py-2 rounded-lg transition ${
-                      chatEnabledSetting
-                        ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                        : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
-                    } ${settingsSaving ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    className={`text-xs font-semibold px-3 py-2 rounded-lg transition ${chatEnabledSetting
+                      ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                      : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                      } ${settingsSaving ? 'opacity-60 cursor-not-allowed' : ''}`}
                   >
-                    {settingsSaving ? 'Saving...' : chatEnabledSetting ? 'Disable' : 'Enable'}
+                    {settingsSaving ? t.common.saving : chatEnabledSetting ? t.common.disable : t.common.enable}
                   </button>
                 </div>
                 <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
@@ -888,7 +894,7 @@ export default function TeacherDashboard() {
                 </div>
               ) : null}
               {students.length === 0 ? (
-                <p className="text-sm text-gray-600">No students have joined yet.</p>
+                <p className="text-sm text-gray-600">{t.teacher.noStudentsJoined}</p>
               ) : (
                 <div className="space-y-3">
                   {students.map((student) => (
@@ -898,17 +904,16 @@ export default function TeacherDashboard() {
                     >
                       <div>
                         <p className="text-sm font-semibold text-gray-900">{student.username}</p>
-                        <p className="text-xs text-gray-600">Joined {formatTimestamp(student.createdAt)}</p>
+                        <p className="text-xs text-gray-600">{t.teacher.joined} {formatTimestamp(student.createdAt)}</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <span
-                          className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                            student.status === 'ACTIVE'
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-gray-200 text-gray-700'
-                          }`}
+                          className={`px-2 py-1 rounded-full text-xs font-semibold ${student.status === 'ACTIVE'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-gray-200 text-gray-700'
+                            }`}
                         >
-                          {student.status === 'ACTIVE' ? 'Active' : 'Removed'}
+                          {student.status === 'ACTIVE' ? t.teacher.active : t.teacher.removed}
                         </span>
                         {student.status === 'ACTIVE' ? (
                           <button
@@ -916,10 +921,10 @@ export default function TeacherDashboard() {
                             disabled={studentActionId === student.id}
                             className="text-xs bg-red-100 hover:bg-red-200 text-red-700 px-3 py-2 rounded-md transition disabled:opacity-60"
                           >
-                            {studentActionId === student.id ? 'Removing...' : 'Reject name'}
+                            {studentActionId === student.id ? t.common.removing : t.teacher.rejectName}
                           </button>
                         ) : (
-                          <span className="text-xs text-gray-500">Waiting for rename</span>
+                          <span className="text-xs text-gray-500">{t.teacher.waitingForRename}</span>
                         )}
                       </div>
                     </div>
@@ -936,7 +941,7 @@ export default function TeacherDashboard() {
             onClick={() => toggleSection('images')}
             className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition"
           >
-            <h2 className="text-lg font-semibold text-gray-900">Image Generations</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{t.teacher.imageGenerations}</h2>
             <svg
               className={`w-5 h-5 text-gray-500 transition-transform ${collapsedSections.has('images') ? '' : 'rotate-180'}`}
               fill="none"
@@ -950,24 +955,24 @@ export default function TeacherDashboard() {
             <div className="px-4 pb-4 border-t border-gray-200">
               {groupedSubmissions.length === 0 ? (
                 <div className="py-8 text-center text-gray-600 text-sm">
-                  No images generated yet. Students can join with the classroom code to begin.
+                  {t.teacher.noImagesGenerated}
                 </div>
               ) : (
                 <div className="pt-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {groupedSubmissions.flatMap((group) => {
                       const firstSubmission = group.submissions[0];
-                      const studentName = firstSubmission?.studentUsername ?? 'Unknown';
+                      const studentName = firstSubmission?.studentUsername ?? t.teacher.unknownStudent;
                       const isShared = group.submissions.some((s) => s.isShared);
-                      
+
                       return group.submissions.map((submission) => {
-                        const imageSrc = submission.imageData 
+                        const imageSrc = submission.imageData
                           ? `data:${submission.imageMimeType ?? 'image/png'};base64,${submission.imageData}`
                           : null;
-                        
+
                         return (
-                          <div 
-                            key={submission.id} 
+                          <div
+                            key={submission.id}
                             className="border border-gray-200 rounded-lg p-3 bg-white hover:shadow-md transition-shadow cursor-pointer"
                             onClick={() => {
                               if (imageSrc) {
@@ -984,12 +989,12 @@ export default function TeacherDashboard() {
                               <p className="text-xs font-medium text-gray-900 line-clamp-2" title={submission.prompt}>
                                 {submission.prompt}
                               </p>
-                              
+
                               {/* Image Preview or Status */}
                               {submission.status === 'PENDING' ? (
                                 <div className="h-32 flex flex-col items-center justify-center gap-2 bg-gray-50 rounded-lg">
                                   <div className="animate-spin rounded-full h-6 w-6 border-2 border-purple-600 border-t-transparent"></div>
-                                  <span className="text-xs text-gray-600">Generating...</span>
+                                  <span className="text-xs text-gray-600">{t.common.generating}</span>
                                 </div>
                               ) : imageSrc ? (
                                 <div className="relative w-full h-32 rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
@@ -1004,26 +1009,25 @@ export default function TeacherDashboard() {
                                 </div>
                               ) : submission.status === 'ERROR' ? (
                                 <div className="h-32 flex items-center justify-center bg-red-50 rounded-lg text-xs text-red-700 px-2 text-center">
-                                  {submission.errorMessage ?? 'Generation failed'}
+                                  {submission.errorMessage ?? t.common.generationFailed}
                                 </div>
                               ) : null}
-                              
+
                               {/* Metadata */}
                               <div className="flex items-center justify-between text-xs text-gray-600">
                                 <div className="flex flex-col gap-0.5">
                                   <span className="font-medium">{studentName}</span>
-                                  <span>{submission.revisionIndex === 0 ? 'Original' : `Refinement ${submission.revisionIndex}`}</span>
+                                  <span>{submission.revisionIndex === 0 ? t.teacher.original : `${t.teacher.refinement} ${submission.revisionIndex}`}</span>
                                 </div>
                                 <div className="flex flex-col items-end gap-0.5">
-                                  <span className={`px-2 py-0.5 rounded text-xs ${
-                                    submission.status === 'SUCCESS' ? 'bg-green-100 text-green-700' :
+                                  <span className={`px-2 py-0.5 rounded text-xs ${submission.status === 'SUCCESS' ? 'bg-green-100 text-green-700' :
                                     submission.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
-                                    'bg-red-100 text-red-700'
-                                  }`}>
+                                      'bg-red-100 text-red-700'
+                                    }`}>
                                     {submission.status}
                                   </span>
                                   {isShared && submission.revisionIndex === 0 && (
-                                    <span className="text-purple-600 text-xs">Shared</span>
+                                    <span className="text-purple-600 text-xs">{t.common.shared}</span>
                                   )}
                                 </div>
                               </div>
@@ -1048,7 +1052,7 @@ export default function TeacherDashboard() {
             onClick={() => toggleSection('chats')}
             className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition"
           >
-            <h2 className="text-lg font-semibold text-gray-900">Chat Conversations</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{t.teacher.chatConversations}</h2>
             <svg
               className={`w-5 h-5 text-gray-500 transition-transform ${collapsedSections.has('chats') ? '' : 'rotate-180'}`}
               fill="none"
@@ -1062,7 +1066,7 @@ export default function TeacherDashboard() {
             <div className="px-4 pb-4 border-t border-gray-200">
               {chatsByStudent.length === 0 ? (
                 <div className="py-8 text-center text-gray-600 text-sm">
-                  No student chats have been started yet.
+                  {t.teacher.noStudentChats}
                 </div>
               ) : (
                 <div className="space-y-4 pt-4">
@@ -1070,7 +1074,7 @@ export default function TeacherDashboard() {
                     <div key={group.studentName} className="border border-gray-200 rounded-lg">
                       <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
                         <h3 className="text-sm font-semibold text-gray-900">{group.studentName}</h3>
-                        <p className="text-xs text-gray-600">{group.threads.length} conversation{group.threads.length === 1 ? '' : 's'}</p>
+                        <p className="text-xs text-gray-600">{group.threads.length} {group.threads.length === 1 ? t.teacher.conversation : t.teacher.conversations}</p>
                       </div>
                       <div className="divide-y divide-gray-200">
                         {group.threads.map((thread) => {
@@ -1082,30 +1086,30 @@ export default function TeacherDashboard() {
                                 <div>
                                   <p className="text-sm font-semibold text-gray-900">{thread.title}</p>
                                   <p className="text-xs text-gray-600">
-                                    Updated {formatTimestamp(thread.updatedAt)} · {thread.messages.length} messages
+                                    {t.teacher.updated} {formatTimestamp(thread.updatedAt)} · {thread.messages.length} {t.teacher.messages}
                                   </p>
                                 </div>
                                 <button
                                   onClick={() => toggleChatExpansion(thread.id)}
                                   className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-md transition"
                                 >
-                                  {isExpanded ? 'Collapse' : 'View'}
+                                  {isExpanded ? t.common.collapse : t.common.view}
                                 </button>
                               </div>
                               {lastMessage && (
                                 <p className="text-sm text-gray-600 line-clamp-2">
-                                  {lastMessage.sender === 'STUDENT' ? 'Student' : 'AI'}: {lastMessage.content}
+                                  {lastMessage.sender === 'STUDENT' ? t.common.student : t.common.ai}: {lastMessage.content}
                                 </p>
                               )}
                               {isExpanded && (
                                 <div className="space-y-3 border border-gray-200 rounded-lg bg-gray-50 p-4">
                                   {thread.messages.length === 0 ? (
-                                    <p className="text-xs text-gray-600">No messages in this conversation.</p>
+                                    <p className="text-xs text-gray-600">{t.teacher.noMessagesInConversation}</p>
                                   ) : (
                                     thread.messages.map((message) => (
                                       <div key={message.id} className="space-y-1">
                                         <div className="flex items-center justify-between text-xs text-gray-600">
-                                          <span>{message.sender === 'STUDENT' ? 'Student' : 'AI Assistant'}</span>
+                                          <span>{message.sender === 'STUDENT' ? t.common.student : t.common.aiAssistant}</span>
                                           <span>{formatTimestamp(message.createdAt)}</span>
                                         </div>
                                         <div className="text-sm text-gray-900 bg-white border border-gray-200 rounded-lg px-3 py-2">
@@ -1169,11 +1173,11 @@ export default function TeacherDashboard() {
 
       {/* Image Modal */}
       {selectedImage && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
           onClick={() => setSelectedImage(null)}
         >
-          <div 
+          <div
             className="bg-white rounded-lg max-w-4xl max-h-[90vh] overflow-auto"
             onClick={(e) => e.stopPropagation()}
           >
