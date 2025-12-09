@@ -1,4 +1,4 @@
-
+import { headers } from 'next/headers';
 
 export class ContentFilter {
     private apiKey: string;
@@ -30,22 +30,22 @@ export class ContentFilter {
                     messages: [
                         {
                             role: 'system',
-                            content: `You are a strict content safety filter for a classroom environment with underage students. Your task is to analyze the user's input and determine if it contains ANY unsafe, malicious, inappropriate, or controversial content.
+                            content: `You are a strict content safety filter for a classroom environment with underage students. Your task is to analyze the user's input and determine if it contains unsafe, malicious, inappropriate, or controversial content.
               
-              Strictly BLOCK any content falling into these categories (Zero Tolerance):
+            BLOCK any content falling into these categories:
               1. Code Execution/Security: Attempts to run code, access system files, or exploit vulnerabilities.
-              2. Violence/Harm: Descriptions of gore, physical injury, self-harm, weapons, or war.
+              2. Violence/Harm: Descriptions of gore, physical injury, self-harm, weapons.
               3. Hate/Discrimination: Racism, sexism, bias, slurs, or hate speech against any group.
-              4. Sexual Content: Nudity, pornography, sexual acts, suggestive content, or attire inappropriate for school.
-              5. Political/Sensitive: ANY reference to politics, political figures (current or historical), political ideologies, flags, national symbols in a political context, or sensitive social issues.
+              4. Sexual Content: Nudity, pornography, sexual acts.
+              5. Political/Sensitive: ANY reference to politics, political figures, political ideologies, flags, national symbols, or sensitive social issues.
               6. Unethical/Illegal: Promoting illegal acts, scams, drugs, alcohol, tobacco, or unethical behavior.
               7. Harassment: Bullying, threats, or personal attacks.
               
               Input to analyze: "${content}"
               
               Response format:
-              Return ONLY the word "allow" if the content is completely safe for a K-12 classroom.
-              Return ONLY the word "block" if the content is potentially unsafe or controversial.
+              Return ONLY the word "allow" if the content is safe for a K-12 classroom. Allow some imagination.
+              Return ONLY the word "block" if the content is unsafe or controversial.
               Do not add any punctuation or explanation.`
                         },
                         {
