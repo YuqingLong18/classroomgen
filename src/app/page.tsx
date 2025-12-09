@@ -751,9 +751,11 @@ export default function StudentHome() {
                                 />
                               </div>
                             ) : (
-                              <div className="h-64 flex items-center justify-center text-[var(--color-muted-foreground)]">
+                              <div className="h-64 flex items-center justify-center text-[var(--color-muted-foreground)] p-4 text-center">
                                 {submission.status === 'ERROR' ? (
-                                  <span className="text-sm text-rose-300">Error: {submission.errorMessage ?? 'Image generation failed'}</span>
+                                  <span className="text-sm text-rose-400 break-words w-full">
+                                    {submission.errorMessage ?? 'Image generation failed'}
+                                  </span>
                                 ) : (
                                   <span className="text-sm">Image unavailable</span>
                                 )}

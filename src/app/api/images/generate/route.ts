@@ -27,6 +27,17 @@ export async function POST(request: Request) {
   try {
     const { prompt, parentSubmissionId, size } = bodySchema.parse(body);
 
+    // Security Check: Content Filter
+    const { contentFilter } = await import('@/lib/contentFilter');
+    const filterResult = await contentFilter.check(prompt);
+
+    if (!filterResult.allowed) {
+      return NextResponse.json(
+        { message: 'Your prompt contains content that violates our safety guidelines.' },
+        { status: 400 }
+      );
+    }
+
     // SECURITY: Sanitize user prompt before processing
     const { sanitizePrompt, logSecurityWarning } = await import('@/lib/promptSanitizer');
     const sanitization = sanitizePrompt(prompt);

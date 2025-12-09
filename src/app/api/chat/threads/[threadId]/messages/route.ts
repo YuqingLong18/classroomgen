@@ -227,6 +227,18 @@ export async function POST(request: Request, context: unknown) {
       // In production, you might want to reject the request entirely
     }
 
+    // Security Check
+    const { contentFilter } = await import('@/lib/contentFilter');
+    const filterResult = await contentFilter.check(content);
+
+    if (!filterResult.allowed) {
+      return NextResponse.json(
+        { message: 'Your message contains content that violates our safety guidelines.' },
+        { status: 400 }
+      );
+    }
+
+    // 4. Save student message
     const studentMessage = await prisma.chatMessage.create({
       data: {
         content,
