@@ -241,7 +241,9 @@ async function callImageGeneration(prompt: string, options: CallOptions = {}) {
   };
 
   if (options.baseImageDataUrl) {
-    body.image_urls = [options.baseImageDataUrl];
+    // Volcengine uses 'image' parameter for reference image (single image)
+    // See: https://www.volcengine.com/docs/82379/1824121
+    body.image = options.baseImageDataUrl;
   }
 
   const response = await fetch(IMAGE_ENDPOINT, {
