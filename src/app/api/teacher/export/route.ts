@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getSessionFromCookies } from '@/lib/session';
 import PDFDocument from 'pdfkit';
 import { Buffer } from 'node:buffer';
+import path from 'path';
 
 function formatDate(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
@@ -100,7 +101,7 @@ export async function GET() {
       }
       // Sort submissions within each root group by creation time
       for (const [rootId, subs] of byRoot.entries()) {
-        byRoot.set(rootId, subs.sort((a, b) => 
+        byRoot.set(rootId, subs.sort((a, b) =>
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
         ));
       }
@@ -118,7 +119,7 @@ export async function GET() {
     }
     // Sort threads chronologically for each student
     for (const [studentId, threads] of chatsByStudent.entries()) {
-      chatsByStudent.set(studentId, threads.sort((a, b) => 
+      chatsByStudent.set(studentId, threads.sort((a, b) =>
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       ));
     }
@@ -131,8 +132,8 @@ export async function GET() {
 
     // Create PDF with promise-based buffer collection
     const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
-      const doc = new PDFDocument({ 
-        margin: 50, 
+      const doc = new PDFDocument({
+        margin: 50,
         size: 'LETTER',
         info: {
           Title: `Classroom Session Report - ${session.classroomCode}`,
@@ -140,6 +141,11 @@ export async function GET() {
           Subject: 'Session Export',
         },
       });
+
+      // Register Chinese font
+      const fontPath = path.join(process.cwd(), 'public/fonts/NotoSansSC-Regular.woff');
+      doc.registerFont('NotoSansSC', fontPath);
+      doc.font('NotoSansSC');
 
       const chunks: Buffer[] = [];
       doc.on('data', (chunk) => chunks.push(chunk));
@@ -159,13 +165,13 @@ export async function GET() {
 
       // Process each student
       const sortedStudentIds = Array.from(allStudentIds).sort();
-      
+
       for (const studentId of sortedStudentIds) {
         const studentSubmissions = submissionsByStudent.get(studentId) || [];
         const studentChats = chatsByStudent.get(studentId) || [];
-        const studentName = studentSubmissions[0]?.student?.username || 
-                           studentChats[0]?.student?.username || 
-                           'Unknown Student';
+        const studentName = studentSubmissions[0]?.student?.username ||
+          studentChats[0]?.student?.username ||
+          'Unknown Student';
 
         // Student header
         doc.addPage();
@@ -176,7 +182,7 @@ export async function GET() {
         if (studentChats.length > 0) {
           doc.fontSize(14).fillColor('#8B5CF6').text('Chat Conversations', { underline: true });
           doc.moveDown(0.5);
-          
+
           for (const thread of studentChats) {
             doc.fontSize(12).fillColor('#000000');
             doc.text(`Thread: ${thread.title}`, { continued: false });
@@ -216,13 +222,13 @@ export async function GET() {
             const rootId = sortedRootIds[sessionIndex];
             const submissions = imageSessions.get(rootId) || [];
             const firstSubmission = submissions[0];
-            
+
             if (!firstSubmission) continue;
 
             doc.fontSize(12).fillColor('#000000');
             doc.text(`Image Session ${sessionIndex + 1}`, { underline: true });
             doc.moveDown(0.3);
-            
+
             // List all submissions in this session (original + refinements)
             for (const submission of submissions) {
               if (submission.revisionIndex === 0) {
@@ -233,7 +239,7 @@ export async function GET() {
                 doc.text(`Prompt: "${submission.prompt}"`, { indent: 30, width: 450 });
                 doc.fontSize(9).fillColor('#666666');
                 doc.text(`Created: ${formatDate(submission.createdAt)}`, { indent: 30 });
-                
+
                 // Add image if available
                 if (submission.imageData && submission.status === 'SUCCESS') {
                   try {
@@ -242,7 +248,7 @@ export async function GET() {
                     const imageHeight = 150;
                     const x = doc.page.margins.left + 30;
                     const y = doc.y;
-                    
+
                     doc.image(imageBuffer, x, y, {
                       width: imageWidth,
                       height: imageHeight,
@@ -255,7 +261,7 @@ export async function GET() {
                     doc.text('[Image could not be embedded]', { indent: 30 });
                   }
                 }
-                
+
                 if (submission.status === 'ERROR') {
                   doc.fontSize(9).fillColor('#DC2626');
                   doc.text(`Status: ERROR - ${submission.errorMessage || 'Generation failed'}`, { indent: 30 });
@@ -278,7 +284,7 @@ export async function GET() {
                 doc.text(`Prompt: "${submission.prompt}"`, { indent: 40, width: 440 });
                 doc.fontSize(9).fillColor('#666666');
                 doc.text(`Created: ${formatDate(submission.createdAt)}`, { indent: 40 });
-                
+
                 // Add image if available
                 if (submission.imageData && submission.status === 'SUCCESS') {
                   try {
@@ -287,7 +293,7 @@ export async function GET() {
                     const imageHeight = 135;
                     const x = doc.page.margins.left + 40;
                     const y = doc.y;
-                    
+
                     doc.image(imageBuffer, x, y, {
                       width: imageWidth,
                       height: imageHeight,
@@ -300,7 +306,7 @@ export async function GET() {
                     doc.text('[Image could not be embedded]', { indent: 40 });
                   }
                 }
-                
+
                 if (submission.status === 'ERROR') {
                   doc.fontSize(9).fillColor('#DC2626');
                   doc.text(`Status: ERROR - ${submission.errorMessage || 'Generation failed'}`, { indent: 40 });
