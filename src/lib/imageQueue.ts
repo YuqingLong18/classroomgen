@@ -83,7 +83,7 @@ class ImageGenerationQueue {
    */
   private async processJob(job: ImageGenerationJob) {
     try {
-      const { imageData, mimeType } = await callVolcengineImageGeneration(job.prompt, job.options);
+      const { imageData, mimeType } = await callImageGeneration(job.prompt, job.options);
 
       await prisma.promptSubmission.update({
         where: { id: job.submissionId },
@@ -113,10 +113,112 @@ class ImageGenerationQueue {
 
 // Import the callVolcengine function from the generate route
 // We'll need to extract it to a shared module
-async function callVolcengineImageGeneration(prompt: string, options: CallOptions = {}) {
+// Shared function for image generation
+async function callImageGeneration(prompt: string, options: CallOptions = {}) {
+  const openRouterKey = process.env.OPENROUTER_API_KEY;
+
+  if (openRouterKey) {
+    // OpenRouter Implementation
+    const model = process.env.OPENROUTER_IMAGE_MODEL || 'google/gemini-2.0-flash-exp:free';
+    const CHAT_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
+
+    // Map size to aspect ratio for Gemini models
+    // Default to 1:1 if not specified or unknown
+    let aspectRatio = '1:1';
+    if (options.size) {
+      if (options.size === '1920x1080') aspectRatio = '16:9';
+      else if (options.size === '1080x1920') aspectRatio = '9:16';
+      else if (options.size === '1280x720') aspectRatio = '16:9'; // Approximate
+      else if (options.size === '720x1280') aspectRatio = '9:16'; // Approximate
+      else if (options.size === '1024x1024') aspectRatio = '1:1';
+      else if (options.size === '2048x2048') aspectRatio = '1:1';
+    }
+
+    // Construct body specifically for Gemini image generation on OpenRouter
+    const body: any = {
+      model,
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+    };
+
+    // Add Gemini-specific parameters if it's a Gemini model
+    if (model.includes('gemini')) {
+      body.modalities = ['image', 'text'];
+      body.image_config = { aspect_ratio: aspectRatio };
+    }
+
+    const response = await fetch(CHAT_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${openRouterKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://classroomgen.vercel.app',
+        'X-Title': 'ClassroomGen',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      console.error('OpenRouter image generation error', result);
+      const message = result?.error?.message ?? 'OpenRouter request failed';
+      throw new Error(message);
+    }
+
+    // Attempt to extract image URL from content or specific fields
+    const choice = result?.choices?.[0]?.message;
+    let imageUrl = null;
+
+    // Check for images array (Gemini/OpenRouter specific structure)
+    if (choice?.images && Array.isArray(choice.images) && choice.images.length > 0) {
+      const firstImage = choice.images[0];
+      if (firstImage?.image_url?.url) {
+        imageUrl = firstImage.image_url.url;
+      }
+    }
+
+    if (!imageUrl && choice?.content) {
+      const content = choice.content.trim();
+      // Check for markdown image syntax: ![alt](url)
+      const match = content.match(/\!\[.*?\]\((.*?)\)/);
+      if (match && match[1]) {
+        imageUrl = match[1];
+      } else {
+        // Check if content itself is a URL or data URL
+        if (content.startsWith('http') || content.startsWith('data:')) {
+          imageUrl = content;
+        } else if (content.length > 100) {
+          // Assume raw base64 if it's a long string
+          // Strip all whitespace (newlines, spaces) just in case
+          const base64Data = content.replace(/\s/g, '');
+          imageUrl = `data:image/png;base64,${base64Data}`;
+        }
+      }
+    }
+
+    if (!imageUrl) {
+      // Fallback: Check if there's an 'image' field in the response (non-standard but possible)
+      if (result.image) imageUrl = result.image;
+      if (result.data?.[0]?.url) imageUrl = result.data[0].url;
+    }
+
+    if (!imageUrl) {
+      console.error('OpenRouter response structure:', JSON.stringify(result, null, 2));
+      throw new Error('Could not extract image URL from OpenRouter response');
+    }
+
+    return fetchImageAsBase64(imageUrl);
+  }
+
+  // Volcengine Implementation (Fallback)
   const apiKey = process.env.VOLCENGINE_API_KEY;
   if (!apiKey) {
-    throw new Error('Missing Volcengine API key. Set VOLCENGINE_API_KEY in your environment.');
+    throw new Error('Missing API key. Set OPENROUTER_API_KEY or VOLCENGINE_API_KEY in your environment.');
   }
 
   const IMAGE_ENDPOINT = 'https://ark.cn-beijing.volces.com/api/v3/images/generations';

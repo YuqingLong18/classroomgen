@@ -6,10 +6,16 @@ export class ContentFilter {
     private endpoint: string;
 
     constructor() {
-        this.apiKey = process.env.VOLCENGINE_API_KEY || process.env.OPENROUTER_API_KEY || '';
-        // The user needs to provide the Endpoint ID for the moderation model
-        this.model = process.env.VOLCENGINE_MODERATION_MODEL || 'ep-20241209124426-moderation';
-        this.endpoint = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions';
+        const openRouterKey = process.env.OPENROUTER_API_KEY;
+        if (openRouterKey) {
+            this.apiKey = openRouterKey;
+            this.model = process.env.OPENROUTER_MODERATION_MODEL || 'omni-moderation-latest';
+            this.endpoint = 'https://openrouter.ai/api/v1/chat/completions';
+        } else {
+            this.apiKey = process.env.VOLCENGINE_API_KEY || '';
+            this.model = process.env.VOLCENGINE_MODERATION_MODEL || 'ep-20241209124426-moderation';
+            this.endpoint = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions';
+        }
     }
 
     async check(content: string): Promise<{ allowed: boolean; reason?: string }> {
@@ -24,6 +30,8 @@ export class ContentFilter {
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${this.apiKey}`,
+                    'HTTP-Referer': 'https://classroomgen.vercel.app',
+                    'X-Title': 'ClassroomGen',
                 },
                 body: JSON.stringify({
                     model: this.model,

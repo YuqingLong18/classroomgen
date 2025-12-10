@@ -52,9 +52,59 @@ function extractTextFromChoiceMessage(message: unknown) {
 }
 
 async function callChatCompletion(history: Array<{ sender: 'STUDENT' | 'AI'; content: string }>) {
+  const openRouterKey = process.env.OPENROUTER_API_KEY;
+
+  if (openRouterKey) {
+    // OpenRouter Implementation
+    const model = process.env.OPENROUTER_CHAT_MODEL || 'google/gemini-2.0-flash-exp:free';
+    const CHAT_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
+
+    const response = await fetch(CHAT_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${openRouterKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://classroomgen.vercel.app', // Replace with actual site URL
+        'X-Title': 'ClassroomGen',
+      },
+      body: JSON.stringify({
+        model,
+        messages: history.map((entry) => ({
+          role: entry.sender === 'STUDENT' ? 'user' : 'assistant',
+          content: entry.content,
+        })),
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      console.error('OpenRouter chat completion error', result);
+      const message = result?.error?.message ?? 'OpenRouter request failed';
+      throw new Error(message);
+    }
+
+    const choice = result?.choices?.[0]?.message;
+    const aiText = extractTextFromChoiceMessage(choice);
+
+    if (!aiText || aiText.length === 0) {
+      throw new Error('OpenRouter returned an empty response');
+    }
+
+    // SECURITY: Validate AI response
+    const { validateAIResponse, logSecurityWarning } = await import('@/lib/promptSanitizer');
+    const validation = validateAIResponse(aiText);
+    if (!validation.safe) {
+      logSecurityWarning('response', validation.warnings, aiText, { model, provider: 'OpenRouter' });
+    }
+
+    return aiText;
+  }
+
+  // Volcengine Implementation (Fallback)
   const apiKey = process.env.VOLCENGINE_API_KEY;
   if (!apiKey) {
-    throw new Error('Missing Volcengine API key. Set VOLCENGINE_API_KEY in your environment.');
+    throw new Error('Missing API key. Set OPENROUTER_API_KEY or VOLCENGINE_API_KEY in your environment.');
   }
 
   const model = process.env.VOLCENGINE_CHAT_MODEL || 'doubao-seed-1-6-251015';
@@ -87,12 +137,11 @@ async function callChatCompletion(history: Array<{ sender: 'STUDENT' | 'AI'; con
     throw new Error('Volcengine returned an empty response');
   }
 
-  // SECURITY: Validate AI response for suspicious patterns
+  // SECURITY: Validate AI response
   const { validateAIResponse, logSecurityWarning } = await import('@/lib/promptSanitizer');
   const validation = validateAIResponse(aiText);
   if (!validation.safe) {
-    logSecurityWarning('response', validation.warnings, aiText, { model });
-    // Log but don't block - AI might be teaching about commands
+    logSecurityWarning('response', validation.warnings, aiText, { model, provider: 'Volcengine' });
   }
 
   return aiText;
