@@ -140,7 +140,12 @@ async function callImageGeneration(prompt: string, options: CallOptions = {}) {
       messages: [
         {
           role: 'user',
-          content: prompt,
+          content: options.baseImageDataUrl
+            ? [
+              { type: 'text', text: prompt },
+              { type: 'image_url', image_url: { url: options.baseImageDataUrl } },
+            ]
+            : prompt,
         },
       ],
     };
@@ -229,14 +234,20 @@ async function callImageGeneration(prompt: string, options: CallOptions = {}) {
     'Content-Type': 'application/json',
   };
 
+  const body: any = {
+    model,
+    prompt,
+    size: options.size || '2048x2048', // Use provided size or default
+  };
+
+  if (options.baseImageDataUrl) {
+    body.image_urls = [options.baseImageDataUrl];
+  }
+
   const response = await fetch(IMAGE_ENDPOINT, {
     method: 'POST',
     headers,
-    body: JSON.stringify({
-      model,
-      prompt,
-      size: options.size || '2048x2048', // Use provided size or default
-    }),
+    body: JSON.stringify(body),
   });
 
   const result = await response.json();
