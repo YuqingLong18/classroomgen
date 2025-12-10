@@ -1,4 +1,4 @@
-import { headers } from 'next/headers';
+
 
 export class ContentFilter {
     private apiKey: string;

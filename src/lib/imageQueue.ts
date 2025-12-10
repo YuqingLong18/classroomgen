@@ -135,7 +135,7 @@ async function callImageGeneration(prompt: string, options: CallOptions = {}) {
     }
 
     // Construct body specifically for Gemini image generation on OpenRouter
-    const body: any = {
+    const body: Record<string, unknown> = {
       model,
       messages: [
         {
@@ -234,7 +234,7 @@ async function callImageGeneration(prompt: string, options: CallOptions = {}) {
     'Content-Type': 'application/json',
   };
 
-  const body: any = {
+  const body: Record<string, unknown> = {
     model,
     prompt,
     size: options.size || '2048x2048', // Use provided size or default
