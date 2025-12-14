@@ -131,6 +131,8 @@ export const translations = {
             updated: 'Updated',
             messages: 'messages',
             noMessagesInConversation: 'No messages in this conversation.',
+            joinAsStudent: 'Join as Student',
+            returnToTeacherView: 'Return to Teacher View',
         },
     },
     zh: {
@@ -265,6 +267,8 @@ export const translations = {
             updated: '更新于',
             messages: '条消息',
             noMessagesInConversation: '此对话暂无消息。',
+            joinAsStudent: '以学生身份加入',
+            returnToTeacherView: '返回教师视图',
         },
     },
 };

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getSessionFromCookies } from '@/lib/session';
+import { verifyTeacherAccess } from '@/lib/session';
 import PDFDocument from 'pdfkit';
 import { Buffer } from 'node:buffer';
 import path from 'path';
@@ -18,11 +18,12 @@ function formatDate(date: Date | string): string {
 
 export async function GET() {
   try {
-    const { sessionId, role } = await getSessionFromCookies();
-
-    if (!sessionId || role !== 'teacher') {
+    const teacherAccess = await verifyTeacherAccess();
+    if (!teacherAccess) {
       return NextResponse.json({ message: 'Teacher access only.' }, { status: 403 });
     }
+    
+    const sessionId = teacherAccess.sessionId;
 
     // Fetch session with all related data
     const session = await prisma.session.findUnique({

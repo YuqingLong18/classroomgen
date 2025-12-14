@@ -15,6 +15,8 @@ interface SessionState {
   role: 'student' | 'teacher' | undefined;
   chatEnabled?: boolean;
   maxStudentEdits?: number;
+  hasTeacherAccess?: boolean;
+  teacherSessionId?: string | null;
   student?: {
     id: string;
     username: string;
@@ -603,6 +605,32 @@ export default function StudentHome() {
             </div>
           </div>
           <div className="text-sm text-[var(--color-muted-foreground)] text-right space-y-1">
+            {session.hasTeacherAccess && (
+              <div className="mb-2">
+                <button
+                  onClick={async () => {
+                    try {
+                      const res = await fetch('/api/teacher/return-to-teacher', {
+                        method: 'POST',
+                        credentials: 'include',
+                      });
+                      if (res.ok) {
+                        window.location.href = '/teacher';
+                      } else {
+                        const error = await res.json().catch(() => ({ message: 'Failed to return to teacher view.' }));
+                        alert(error.message ?? 'Failed to return to teacher view.');
+                      }
+                    } catch (error) {
+                      console.error('Failed to return to teacher view', error);
+                      alert('Failed to return to teacher view.');
+                    }
+                  }}
+                  className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition"
+                >
+                  {t.teacher.returnToTeacherView}
+                </button>
+              </div>
+            )}
             <p>
               {t.student.signedInAs}{' '}
               <span className="font-medium text-[var(--color-foreground)]">

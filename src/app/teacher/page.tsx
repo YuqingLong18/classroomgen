@@ -48,6 +48,8 @@ interface SessionResponse {
     role: 'student' | 'teacher' | undefined;
     chatEnabled?: boolean;
     maxStudentEdits?: number;
+    hasTeacherAccess?: boolean;
+    teacherSessionId?: string | null;
     teacher?: {
       id: string;
       username: string;
@@ -758,6 +760,28 @@ export default function TeacherDashboard() {
               className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition"
             >
               {refreshing ? t.common.loading : t.common.refresh}
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/teacher/join-as-student', {
+                    method: 'POST',
+                    credentials: 'include',
+                  });
+                  if (res.ok) {
+                    window.location.href = '/';
+                  } else {
+                    const error = await res.json().catch(() => ({ message: 'Failed to join as student.' }));
+                    alert(error.message ?? 'Failed to join as student.');
+                  }
+                } catch (error) {
+                  console.error('Failed to join as student', error);
+                  alert('Failed to join as student.');
+                }
+              }}
+              className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"
+            >
+              {t.teacher.joinAsStudent}
             </button>
             <button
               onClick={() => {

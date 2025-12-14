@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getSessionFromCookies } from '@/lib/session';
+import { verifyTeacherAccess } from '@/lib/session';
 
 export async function GET() {
-  const { sessionId, role } = await getSessionFromCookies();
-
-  if (!sessionId || role !== 'teacher') {
+  const teacherAccess = await verifyTeacherAccess();
+  if (!teacherAccess) {
     return NextResponse.json({ message: 'Teacher access only.' }, { status: 403 });
   }
+  
+  const sessionId = teacherAccess.sessionId;
 
   const threads = await prisma.chatThread.findMany({
     where: { sessionId },

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { getSessionFromCookies } from '@/lib/session';
+import { verifyTeacherAccess } from '@/lib/session';
 
 const bodySchema = z
   .object({
@@ -13,11 +13,12 @@ const bodySchema = z
   });
 
 export async function PATCH(request: Request) {
-  const { sessionId, role } = await getSessionFromCookies();
-
-  if (!sessionId || role !== 'teacher') {
+  const teacherAccess = await verifyTeacherAccess();
+  if (!teacherAccess) {
     return NextResponse.json({ message: 'Teacher access only.' }, { status: 403 });
   }
+  
+  const sessionId = teacherAccess.sessionId;
 
   try {
     const json = await request.json().catch(() => ({}));

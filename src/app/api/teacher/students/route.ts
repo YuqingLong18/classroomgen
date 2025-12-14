@@ -2,25 +2,20 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { StudentStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { getSessionFromCookies } from '@/lib/session';
+import { verifyTeacherAccess } from '@/lib/session';
 
 const updateSchema = z.object({
   studentId: z.string().cuid(),
   action: z.literal('kick'),
 });
 
-function teacherGuard(sessionId?: string, role?: string) {
-  if (!sessionId || role !== 'teacher') {
+export async function GET() {
+  const teacherAccess = await verifyTeacherAccess();
+  if (!teacherAccess) {
     return NextResponse.json({ message: 'Teacher access only.' }, { status: 403 });
   }
-  return null;
-}
-
-export async function GET() {
-  const { sessionId, role } = await getSessionFromCookies();
-
-  const guard = teacherGuard(sessionId, role);
-  if (guard) return guard;
+  
+  const sessionId = teacherAccess.sessionId;
 
   const session = await prisma.session.findUnique({
     where: { id: sessionId },
@@ -47,10 +42,12 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
-    const { sessionId, role } = await getSessionFromCookies();
-
-    const guard = teacherGuard(sessionId, role);
-    if (guard) return guard;
+    const teacherAccess = await verifyTeacherAccess();
+    if (!teacherAccess) {
+      return NextResponse.json({ message: 'Teacher access only.' }, { status: 403 });
+    }
+    
+    const sessionId = teacherAccess.sessionId;
 
     const json = await request.json();
     const { studentId, action } = updateSchema.parse(json);

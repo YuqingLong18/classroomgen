@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { StudentStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { getSessionFromCookies } from '@/lib/session';
-import { roleCookieName, sessionCookieName, studentCookieName } from '@/lib/auth';
+import { getSessionFromCookies, getTeacherSessionId } from '@/lib/session';
+import { roleCookieName, sessionCookieName, studentCookieName, teacherSessionCookieName } from '@/lib/auth';
 
 export async function GET() {
   try {
@@ -55,6 +55,7 @@ export async function GET() {
       response.cookies.delete(sessionCookieName);
       response.cookies.delete(roleCookieName);
       response.cookies.delete(studentCookieName);
+      response.cookies.delete(teacherSessionCookieName);
       return response;
     }
 
@@ -72,6 +73,7 @@ export async function GET() {
           response.cookies.delete(sessionCookieName);
           response.cookies.delete(roleCookieName);
           response.cookies.delete(studentCookieName);
+          response.cookies.delete(teacherSessionCookieName);
           return response;
         }
         student = { id: record.id, username: record.username };
@@ -81,7 +83,33 @@ export async function GET() {
         response.cookies.delete(sessionCookieName);
         response.cookies.delete(roleCookieName);
         response.cookies.delete(studentCookieName);
+        response.cookies.delete(teacherSessionCookieName);
         return response;
+      }
+    }
+
+    // Check if user has teacher access (either current role or teacher session cookie)
+    let hasTeacherAccess = false;
+    let teacherSessionForAccess = null;
+    if (role === 'teacher') {
+      hasTeacherAccess = true;
+    } else {
+      // Check teacher session cookie
+      const teacherSessionId = await getTeacherSessionId();
+      if (teacherSessionId) {
+        // Verify teacher session is valid and matches current session's teacher
+        const teacherSession = await prisma.session.findUnique({
+          where: { id: teacherSessionId },
+          select: {
+            id: true,
+            teacherId: true,
+            isActive: true,
+          },
+        });
+        if (teacherSession && teacherSession.isActive && teacherSession.teacherId === session.teacher.id) {
+          hasTeacherAccess = true;
+          teacherSessionForAccess = teacherSessionId;
+        }
       }
     }
 
@@ -95,6 +123,8 @@ export async function GET() {
         classroomCode: session.classroomCode,
         teacher: session.teacher,
         student,
+        hasTeacherAccess, // Indicates if user can access teacher dashboard
+        teacherSessionId: teacherSessionForAccess, // Teacher session ID if viewing as student
       },
     });
   } catch (error) {
@@ -109,5 +139,6 @@ export async function DELETE() {
   response.cookies.delete(sessionCookieName);
   response.cookies.delete(roleCookieName);
   response.cookies.delete(studentCookieName);
+  response.cookies.delete(teacherSessionCookieName);
   return response;
 }
