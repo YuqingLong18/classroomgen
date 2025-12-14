@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 import { translations, Language } from './translations';
 
 type LanguageContextType = {
@@ -12,14 +12,9 @@ type LanguageContextType = {
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-    const [language, setLanguageState] = useState<Language>('en');
-
-    useEffect(() => {
-        const saved = localStorage.getItem('classroomgen_language') as Language;
-        if (saved && (saved === 'en' || saved === 'zh')) {
-            setLanguageState(saved);
-        }
-    }, []);
+    // Always default to Chinese for all landing pages (login, dashboard, student view)
+    // This ensures everyone lands on Chinese by default, regardless of saved preferences
+    const [language, setLanguageState] = useState<Language>('zh');
 
     const setLanguage = (lang: Language) => {
         setLanguageState(lang);

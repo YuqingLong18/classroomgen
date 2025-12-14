@@ -506,6 +506,9 @@ export default function StudentHome() {
       <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#ede9fe] via-[#f7f5ff] to-[#ffffff] p-6">
         <div className="max-w-md w-full bg-[var(--color-surface)] shadow-[var(--shadow-soft)] rounded-2xl p-8 space-y-6 border border-[var(--color-border)]/70 backdrop-blur">
           <header className="space-y-2 text-center">
+            <div className="flex justify-end mb-2">
+              <LanguageToggle />
+            </div>
             <h1 className="text-2xl font-semibold text-[var(--color-accent-strong)]">{t.student.signInTitle}</h1>
             <p className="text-sm text-[var(--color-muted)]">
               {t.student.signInDesc}

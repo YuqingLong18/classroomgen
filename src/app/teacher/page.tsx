@@ -658,6 +658,9 @@ export default function TeacherDashboard() {
       <main className="min-h-screen bg-white text-gray-900 flex items-center justify-center p-6">
         <div className="w-full max-w-lg space-y-8">
           <header className="space-y-2 text-center">
+            <div className="flex justify-end mb-2">
+              <LanguageToggle />
+            </div>
             <h1 className="text-3xl font-semibold text-purple-700">{t.teacher.controlCenter}</h1>
             <p className="text-sm text-gray-600">
               {t.teacher.signInDesc}
