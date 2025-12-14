@@ -87,7 +87,7 @@ class ImageGenerationQueue {
       // Get teacher API key if teacherId is provided
       let teacherApiKey: string | null = null;
       if (job.teacherId) {
-        const { getTeacherApiKey } = await import('@/app/api/teacher/api-key/route');
+        const { getTeacherApiKey } = await import('@/lib/teacherApiKey');
         teacherApiKey = await getTeacherApiKey(job.teacherId);
       }
 

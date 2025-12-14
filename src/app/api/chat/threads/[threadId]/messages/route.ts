@@ -280,7 +280,7 @@ export async function POST(request: Request, context: unknown) {
     // Get teacher API key for content filter
     let teacherApiKeyForFilter: string | null = null;
     if (session.teacherId) {
-      const { getTeacherApiKey } = await import('@/app/api/teacher/api-key/route');
+      const { getTeacherApiKey } = await import('@/lib/teacherApiKey');
       teacherApiKeyForFilter = await getTeacherApiKey(session.teacherId);
     }
 
@@ -316,7 +316,7 @@ export async function POST(request: Request, context: unknown) {
     // Get teacher API key if available
     let teacherApiKey: string | null = null;
     if (session.teacherId) {
-      const { getTeacherApiKey } = await import('@/app/api/teacher/api-key/route');
+      const { getTeacherApiKey } = await import('@/lib/teacherApiKey');
       teacherApiKey = await getTeacherApiKey(session.teacherId);
     }
 

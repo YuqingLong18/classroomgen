@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     // Get teacher API key for content filter
     let teacherApiKey: string | null = null;
     if (session.teacherId) {
-      const { getTeacherApiKey } = await import('@/app/api/teacher/api-key/route');
+      const { getTeacherApiKey } = await import('@/lib/teacherApiKey');
       teacherApiKey = await getTeacherApiKey(session.teacherId);
     }
 
