@@ -34,6 +34,7 @@ model Teacher {
   username     String    @unique
   passwordHash String
   displayName  String?
+  apiKeyEncrypted String? // Encrypted Volcengine API key
   createdAt    DateTime  @default(now())
   sessions     Session[]
 }

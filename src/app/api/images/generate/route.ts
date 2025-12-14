@@ -22,14 +22,34 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'Only students can generate images in this view.' }, { status: 403 });
   }
 
-  const body = await request.json();
+    const body = await request.json();
 
-  try {
+    try {
     const { prompt, parentSubmissionId, size } = bodySchema.parse(body);
+
+    const session = await prisma.session.findUnique({
+      where: { id: sessionId },
+      select: {
+        isActive: true,
+        maxStudentEdits: true,
+        teacherId: true,
+      },
+    });
+
+    if (!session || !session.isActive) {
+      return NextResponse.json({ message: 'Session expired. Please ask the teacher to restart.' }, { status: 403 });
+    }
+
+    // Get teacher API key for content filter
+    let teacherApiKey: string | null = null;
+    if (session.teacherId) {
+      const { getTeacherApiKey } = await import('@/app/api/teacher/api-key/route');
+      teacherApiKey = await getTeacherApiKey(session.teacherId);
+    }
 
     // Security Check: Content Filter
     const { contentFilter } = await import('@/lib/contentFilter');
-    const filterResult = await contentFilter.check(prompt);
+    const filterResult = await contentFilter.check(prompt, teacherApiKey);
 
     if (!filterResult.allowed) {
       return NextResponse.json(
@@ -56,18 +76,6 @@ export async function POST(request: Request) {
         { message: 'You were removed from the classroom. Please rejoin with a new name.' },
         { status: 403 },
       );
-    }
-
-    const session = await prisma.session.findUnique({
-      where: { id: sessionId },
-      select: {
-        isActive: true,
-        maxStudentEdits: true,
-      },
-    });
-
-    if (!session || !session.isActive) {
-      return NextResponse.json({ message: 'Session expired. Please ask the teacher to restart.' }, { status: 403 });
     }
 
     const maxEditsAllowed = session.maxStudentEdits ?? 3;
@@ -135,7 +143,7 @@ export async function POST(request: Request) {
 
     // Enqueue the image generation job for background processing
     // This returns immediately, allowing the request to complete quickly
-    enqueueImageGeneration(submission.id, prompt, { baseImageDataUrl, size });
+    enqueueImageGeneration(submission.id, prompt, { baseImageDataUrl, size }, session.teacherId);
 
     // Return the submission immediately with PENDING status
     // The client will poll for updates

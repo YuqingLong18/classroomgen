@@ -51,7 +51,7 @@ function extractTextFromChoiceMessage(message: unknown) {
   return null;
 }
 
-async function callChatCompletion(history: Array<{ sender: 'STUDENT' | 'AI'; content: string }>) {
+async function callChatCompletion(history: Array<{ sender: 'STUDENT' | 'AI'; content: string }>, teacherApiKey: string | null = null) {
   const openRouterKey = process.env.OPENROUTER_API_KEY;
 
   if (openRouterKey) {
@@ -102,9 +102,10 @@ async function callChatCompletion(history: Array<{ sender: 'STUDENT' | 'AI'; con
   }
 
   // Volcengine Implementation (Fallback)
-  const apiKey = process.env.VOLCENGINE_API_KEY;
+  // Use teacher's API key if provided, otherwise fall back to environment variable
+  const apiKey = teacherApiKey || process.env.VOLCENGINE_API_KEY;
   if (!apiKey) {
-    throw new Error('Missing API key. Set OPENROUTER_API_KEY or VOLCENGINE_API_KEY in your environment.');
+    throw new Error('Missing API key. Please configure your Volcengine API KEY in the teacher dashboard.');
   }
 
   const model = process.env.VOLCENGINE_CHAT_MODEL || 'doubao-seed-1-6-251015';
@@ -243,6 +244,7 @@ export async function POST(request: Request, context: unknown) {
       select: {
         isActive: true,
         chatEnabled: true,
+        teacherId: true,
       },
     });
 
@@ -275,9 +277,16 @@ export async function POST(request: Request, context: unknown) {
       // In production, you might want to reject the request entirely
     }
 
+    // Get teacher API key for content filter
+    let teacherApiKeyForFilter: string | null = null;
+    if (session.teacherId) {
+      const { getTeacherApiKey } = await import('@/app/api/teacher/api-key/route');
+      teacherApiKeyForFilter = await getTeacherApiKey(session.teacherId);
+    }
+
     // Security Check
     const { contentFilter } = await import('@/lib/contentFilter');
-    const filterResult = await contentFilter.check(content);
+    const filterResult = await contentFilter.check(content, teacherApiKeyForFilter);
 
     if (!filterResult.allowed) {
       return NextResponse.json(
@@ -304,10 +313,20 @@ export async function POST(request: Request, context: unknown) {
 
     const orderedHistory = history.reverse();
 
-    const aiResponseText = await callChatCompletion(orderedHistory.map((message) => ({
-      sender: message.sender,
-      content: message.content,
-    })));
+    // Get teacher API key if available
+    let teacherApiKey: string | null = null;
+    if (session.teacherId) {
+      const { getTeacherApiKey } = await import('@/app/api/teacher/api-key/route');
+      teacherApiKey = await getTeacherApiKey(session.teacherId);
+    }
+
+    const aiResponseText = await callChatCompletion(
+      orderedHistory.map((message) => ({
+        sender: message.sender,
+        content: message.content,
+      })),
+      teacherApiKey
+    );
 
     const aiMessage = await prisma.chatMessage.create({
       data: {

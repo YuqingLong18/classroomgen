@@ -17,6 +17,7 @@ type ImageGenerationJob = {
   submissionId: string;
   prompt: string;
   options: CallOptions;
+  teacherId?: string; // Optional teacher ID for API key lookup
 };
 
 // Configuration for concurrent processing
@@ -83,7 +84,14 @@ class ImageGenerationQueue {
    */
   private async processJob(job: ImageGenerationJob) {
     try {
-      const { imageData, mimeType } = await callImageGeneration(job.prompt, job.options);
+      // Get teacher API key if teacherId is provided
+      let teacherApiKey: string | null = null;
+      if (job.teacherId) {
+        const { getTeacherApiKey } = await import('@/app/api/teacher/api-key/route');
+        teacherApiKey = await getTeacherApiKey(job.teacherId);
+      }
+
+      const { imageData, mimeType } = await callImageGeneration(job.prompt, job.options, teacherApiKey);
 
       await prisma.promptSubmission.update({
         where: { id: job.submissionId },
@@ -114,7 +122,7 @@ class ImageGenerationQueue {
 // Import the callVolcengine function from the generate route
 // We'll need to extract it to a shared module
 // Shared function for image generation
-async function callImageGeneration(prompt: string, options: CallOptions = {}) {
+async function callImageGeneration(prompt: string, options: CallOptions = {}, teacherApiKey: string | null = null) {
   const openRouterKey = process.env.OPENROUTER_API_KEY;
 
   if (openRouterKey) {
@@ -221,9 +229,10 @@ async function callImageGeneration(prompt: string, options: CallOptions = {}) {
   }
 
   // Volcengine Implementation (Fallback)
-  const apiKey = process.env.VOLCENGINE_API_KEY;
+  // Use teacher's API key if provided, otherwise fall back to environment variable
+  const apiKey = teacherApiKey || process.env.VOLCENGINE_API_KEY;
   if (!apiKey) {
-    throw new Error('Missing API key. Set OPENROUTER_API_KEY or VOLCENGINE_API_KEY in your environment.');
+    throw new Error('Missing API key. Please configure your Volcengine API KEY in the teacher dashboard.');
   }
 
   const IMAGE_ENDPOINT = 'https://ark.cn-beijing.volces.com/api/v3/images/generations';
@@ -293,7 +302,7 @@ async function fetchImageAsBase64(urlOrDataUrl: string) {
 // Singleton instance
 const imageQueue = new ImageGenerationQueue();
 
-export function enqueueImageGeneration(submissionId: string, prompt: string, options: CallOptions = {}) {
-  imageQueue.enqueue({ submissionId, prompt, options });
+export function enqueueImageGeneration(submissionId: string, prompt: string, options: CallOptions = {}, teacherId?: string) {
+  imageQueue.enqueue({ submissionId, prompt, options, teacherId });
 }
 

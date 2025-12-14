@@ -154,6 +154,11 @@ export default function TeacherDashboard() {
   const [settingsNotice, setSettingsNotice] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [selectedImage, setSelectedImage] = useState<{ src: string; prompt: string; mimeType: string | null } | null>(null);
+  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
+  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+  const [apiKeyValue, setApiKeyValue] = useState('');
+  const [apiKeySaving, setApiKeySaving] = useState(false);
+  const [apiKeyError, setApiKeyError] = useState<string | null>(null);
   const sessionRequestIdRef = useRef(0);
 
   const toggleSection = useCallback((sectionId: string) => {
@@ -331,6 +336,61 @@ export default function TeacherDashboard() {
       void loadActivity();
     }
   }, [session?.id, session?.role, loadActivity]);
+
+  const loadApiKeyStatus = useCallback(async () => {
+    if (!session || session.role !== 'teacher') {
+      return;
+    }
+    try {
+      const res = await fetch('/api/teacher/api-key', { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setHasApiKey(data.hasApiKey ?? false);
+      }
+    } catch (error) {
+      console.error('Failed to load API key status', error);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (session?.role === 'teacher') {
+      void loadApiKeyStatus();
+    }
+  }, [session?.role, loadApiKeyStatus]);
+
+  const handleSaveApiKey = useCallback(async () => {
+    if (!apiKeyValue.trim()) {
+      setApiKeyError('API key cannot be empty');
+      return;
+    }
+
+    setApiKeySaving(true);
+    setApiKeyError(null);
+    try {
+      const res = await fetch('/api/teacher/api-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ apiKey: apiKeyValue.trim() }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ message: 'Failed to save API key.' }));
+        setApiKeyError(error.message ?? 'Failed to save API key.');
+        return;
+      }
+
+      setHasApiKey(true);
+      setShowApiKeyInput(false);
+      setApiKeyValue('');
+      setApiKeyError(null);
+    } catch (error) {
+      console.error('Failed to save API key', error);
+      setApiKeyError('Failed to save API key.');
+    } finally {
+      setApiKeySaving(false);
+    }
+  }, [apiKeyValue]);
 
   useEffect(() => {
     if (session?.role === 'teacher') {
@@ -736,6 +796,70 @@ export default function TeacherDashboard() {
   return (
     <main className="min-h-screen bg-white text-gray-900">
       <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+        {/* API Key Configuration Section - At the very top */}
+        {session && session.role === 'teacher' && (
+          <section className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            {!showApiKeyInput ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-gray-700">{t.teacher.apiKeyTitle}:</span>
+                  {hasApiKey ? (
+                    <span className="text-sm text-green-700 font-medium">{t.teacher.apiKeyConfigured}</span>
+                  ) : (
+                    <span className="text-sm text-orange-700 font-medium">Not configured</span>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    setShowApiKeyInput(true);
+                    setApiKeyValue('');
+                    setApiKeyError(null);
+                  }}
+                  className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"
+                >
+                  {hasApiKey ? t.teacher.useNewKey : t.teacher.saveApiKey}
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium text-gray-700 flex-shrink-0">{t.teacher.apiKeyTitle}:</label>
+                  <input
+                    type="password"
+                    value={apiKeyValue}
+                    onChange={(e) => {
+                      setApiKeyValue(e.target.value);
+                      setApiKeyError(null);
+                    }}
+                    placeholder={t.teacher.apiKeyPlaceholder}
+                    className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                  />
+                  <button
+                    onClick={handleSaveApiKey}
+                    disabled={apiKeySaving || !apiKeyValue.trim()}
+                    className="text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:text-gray-500 text-white px-4 py-2 rounded-lg transition"
+                  >
+                    {apiKeySaving ? t.teacher.savingApiKey : t.teacher.saveApiKey}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowApiKeyInput(false);
+                      setApiKeyValue('');
+                      setApiKeyError(null);
+                    }}
+                    className="text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg transition"
+                  >
+                    {t.common.cancel}
+                  </button>
+                </div>
+                {apiKeyError && (
+                  <p className="text-sm text-red-600">{apiKeyError}</p>
+                )}
+              </div>
+            )}
+          </section>
+        )}
+
         {/* Header */}
         <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between pb-6 border-b border-gray-200">
           <div className="space-y-1">

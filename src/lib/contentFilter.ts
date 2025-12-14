@@ -18,8 +18,11 @@ export class ContentFilter {
         }
     }
 
-    async check(content: string): Promise<{ allowed: boolean; reason?: string }> {
-        if (!this.apiKey) {
+    async check(content: string, teacherApiKey?: string | null): Promise<{ allowed: boolean; reason?: string }> {
+        // Use teacher API key if provided, otherwise use instance API key
+        const apiKey = teacherApiKey || this.apiKey;
+        
+        if (!apiKey) {
             console.warn('ContentFilter: Missing API key, skipping check (defaulting to allow)');
             return { allowed: true };
         }
@@ -29,7 +32,7 @@ export class ContentFilter {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Authorization': `Bearer ${apiKey}`,
                     'HTTP-Referer': 'https://classroomgen.vercel.app',
                     'X-Title': 'ClassroomGen',
                 },
