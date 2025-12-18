@@ -136,6 +136,8 @@ export default function TeacherDashboard() {
   const { t } = useLanguage();
   const [session, setSession] = useState<SessionResponse['session']>(null);
   const [loading, setLoading] = useState(true);
+  const [returningToTeacher, setReturningToTeacher] = useState(false);
+  const [returnToTeacherError, setReturnToTeacherError] = useState<string | null>(null);
   const [teacherUsername, setTeacherUsername] = useState('');
   const [teacherPassword, setTeacherPassword] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
@@ -160,6 +162,7 @@ export default function TeacherDashboard() {
   const [apiKeySaving, setApiKeySaving] = useState(false);
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
   const sessionRequestIdRef = useRef(0);
+  const autoReturnAttemptedRef = useRef(false);
 
   const toggleSection = useCallback((sectionId: string) => {
     setCollapsedSections((prev) => {
@@ -323,6 +326,55 @@ export default function TeacherDashboard() {
   }, [loadSession]);
 
   useEffect(() => {
+    const handlePageShow = () => {
+      void loadSession();
+    };
+    window.addEventListener('pageshow', handlePageShow);
+    return () => {
+      window.removeEventListener('pageshow', handlePageShow);
+    };
+  }, [loadSession]);
+
+  const handleReturnToTeacher = useCallback(async () => {
+    setReturningToTeacher(true);
+    setReturnToTeacherError(null);
+    try {
+      invalidatePendingSessionLoads();
+      const res = await fetch('/api/teacher/return-to-teacher', {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ message: 'Failed to return to teacher view.' }));
+        setReturnToTeacherError(error.message ?? 'Failed to return to teacher view.');
+        return;
+      }
+
+      const confirmed = await waitForSessionRole('teacher');
+      if (!confirmed) {
+        await loadSession();
+      }
+    } catch (error) {
+      console.error('Failed to return to teacher view', error);
+      setReturnToTeacherError('Failed to return to teacher view.');
+    } finally {
+      setReturningToTeacher(false);
+    }
+  }, [invalidatePendingSessionLoads, loadSession, waitForSessionRole]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!session) return;
+    if (session.role === 'teacher') return;
+    if (!session.hasTeacherAccess) return;
+    if (autoReturnAttemptedRef.current) return;
+
+    autoReturnAttemptedRef.current = true;
+    void handleReturnToTeacher();
+  }, [loading, session, handleReturnToTeacher]);
+
+  useEffect(() => {
     const interval = window.setInterval(() => {
       void loadSession();
     }, 15000);
@@ -413,6 +465,15 @@ export default function TeacherDashboard() {
       return;
     }
 
+    if (session?.hasTeacherAccess && session.role !== 'teacher') {
+      const confirmed = window.confirm(
+        'You already have an active classroom. Signing in again will end the current session for everyone and create a new classroom. Continue?',
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
     setFormLoading(true);
     setFormError(null);
     try {
@@ -485,7 +546,7 @@ export default function TeacherDashboard() {
     } finally {
       setFormLoading(false);
     }
-  }, [teacherUsername, teacherPassword, waitForSessionRole, loadSession, loadActivity, invalidatePendingSessionLoads]);
+  }, [teacherUsername, teacherPassword, session, waitForSessionRole, loadSession, loadActivity, invalidatePendingSessionLoads]);
 
   const handleEndSession = useCallback(async () => {
     setFormLoading(true);
@@ -716,6 +777,92 @@ export default function TeacherDashboard() {
   }
 
   if (!session || session.role !== 'teacher') {
+    if (session?.hasTeacherAccess) {
+      return (
+        <main className="min-h-screen bg-white text-gray-900 flex items-center justify-center p-6">
+          <div className="w-full max-w-lg space-y-6">
+            <header className="space-y-2 text-center">
+              <div className="flex justify-end mb-2">
+                <LanguageToggle />
+              </div>
+              <h1 className="text-3xl font-semibold text-purple-700">{t.teacher.controlCenter}</h1>
+              <p className="text-sm text-gray-600">
+                Returning you to the teacher dashboard for your active classroom.
+              </p>
+            </header>
+            <section className="bg-blue-50 rounded-2xl p-6 space-y-4 border border-blue-200">
+              {returnToTeacherError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {returnToTeacherError}
+                </div>
+              ) : null}
+              <button
+                onClick={() => void handleReturnToTeacher()}
+                disabled={returningToTeacher}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg transition disabled:bg-gray-300 disabled:text-gray-500"
+              >
+                {returningToTeacher ? t.common.loading : t.teacher.returnToTeacherView}
+              </button>
+              <p className="text-xs text-gray-600">
+                If you sign in again here, you will start a new classroom and end the current session for everyone.
+              </p>
+            </section>
+            <section className="bg-white rounded-2xl p-6 space-y-4 border border-gray-200">
+              <p className="text-sm text-gray-700">
+                Need a fresh classroom instead? Sign in below.
+              </p>
+              <div className="space-y-2">
+                <label className="text-xs uppercase tracking-wide text-gray-600" htmlFor="teacher-username">
+                  {t.teacher.username}
+                </label>
+                <input
+                  id="teacher-username"
+                  type="text"
+                  value={teacherUsername}
+                  onChange={(event) => {
+                    setTeacherUsername(event.target.value);
+                    setFormError(null);
+                  }}
+                  autoComplete="username"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
+                  placeholder="e.g. ms-jackson"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs uppercase tracking-wide text-gray-600" htmlFor="teacher-password">
+                  {t.teacher.password}
+                </label>
+                <input
+                  id="teacher-password"
+                  type="password"
+                  value={teacherPassword}
+                  onChange={(event) => {
+                    setTeacherPassword(event.target.value);
+                    setFormError(null);
+                  }}
+                  autoComplete="current-password"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
+                  placeholder="Enter your password"
+                />
+              </div>
+              {formError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {formError}
+                </div>
+              ) : null}
+              <button
+                onClick={() => void handleTeacherLogin()}
+                disabled={formLoading || teacherUsername.trim().length === 0 || teacherPassword.length === 0}
+                className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 rounded-lg transition disabled:bg-gray-300 disabled:text-gray-500"
+              >
+                {formLoading ? t.teacher.signingIn : t.teacher.enterDashboard}
+              </button>
+            </section>
+          </div>
+        </main>
+      );
+    }
+
     return (
       <main className="min-h-screen bg-white text-gray-900 flex items-center justify-center p-6">
         <div className="w-full max-w-lg space-y-8">
