@@ -76,47 +76,72 @@ export async function POST(request: Request) {
       });
     }
 
-    await deactivateTeacherSessions(teacher.id);
+    // Check for existing active session to resume
+    const sessionDurationMinutes = parseInt(process.env.CLASSROOM_SESSION_DURATION_MINUTES || '1440', 10);
+    const validSessionThreshold = new Date(Date.now() - sessionDurationMinutes * 60 * 1000);
 
-    let session: {
-      id: string;
-      classroomCode: string;
-      createdAt: Date;
-      chatEnabled: boolean;
-      maxStudentEdits: number;
-    } | null = null;
+    const existingSession = await prisma.session.findFirst({
+      where: {
+        teacherId: teacher.id,
+        isActive: true,
+        createdAt: {
+          gte: validSessionThreshold,
+        },
+      },
+      select: {
+        id: true,
+        classroomCode: true,
+        createdAt: true,
+        chatEnabled: true,
+        maxStudentEdits: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
 
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const classroomCode = await generateUniqueClassroomCode();
-      try {
-        session = await prisma.session.create({
-          data: {
-            teacherId: teacher.id,
-            classroomCode,
-          },
-          select: {
-            id: true,
-            classroomCode: true,
-            createdAt: true,
-            chatEnabled: true,
-            maxStudentEdits: true,
-          },
-        });
-        break;
-      } catch (error) {
-        if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === 'P2002' &&
-          attempt < 4
-        ) {
-          continue;
+    let session;
+
+    if (existingSession) {
+      // Resume existing session
+      session = existingSession;
+      console.log(`Resuming existing session ${session.classroomCode} for teacher ${teacher.username}`);
+    } else {
+      // Deactivate old sessions and create a new one
+      await deactivateTeacherSessions(teacher.id);
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const classroomCode = await generateUniqueClassroomCode();
+        try {
+          session = await prisma.session.create({
+            data: {
+              teacherId: teacher.id,
+              classroomCode,
+            },
+            select: {
+              id: true,
+              classroomCode: true,
+              createdAt: true,
+              chatEnabled: true,
+              maxStudentEdits: true,
+            },
+          });
+          break;
+        } catch (error) {
+          if (
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === 'P2002' &&
+            attempt < 4
+          ) {
+            continue;
+          }
+          throw error;
         }
-        throw error;
       }
     }
 
     if (!session) {
-      return NextResponse.json({ message: 'Unable to create a classroom. Please try again.' }, { status: 500 });
+      return NextResponse.json({ message: 'Unable to create or resume a classroom. Please try again.' }, { status: 500 });
     }
 
     const response = NextResponse.json({
