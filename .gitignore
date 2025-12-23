@@ -17,6 +17,10 @@
 /.next/
 /out/
 
+# database
+/uploads/
+/test-results/
+
 # production
 /build
 
