@@ -116,6 +116,7 @@ export default function StudentHome() {
   const [commentSubmittingId, setCommentSubmittingId] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<{ src: string; prompt: string; mimeType: string | null } | null>(null);
   const [referenceImages, setReferenceImages] = useState<string[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sessionRequestIdRef = useRef(0);
 
@@ -694,54 +695,119 @@ export default function StudentHome() {
                   <option value="4096x4096">{t.student.sizeLargeSquare}</option>
                 </select>
               </div>
+            </div>
 
-              <div className="flex items-center gap-2">
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  ref={fileInputRef}
-                  onChange={(e) => {
-                    const files = Array.from(e.target.files || []);
-                    if (files.length > 0) {
-                      const newImages: string[] = [];
-                      let error: string | null = null;
-
-                      let processed = 0;
-                      files.forEach(file => {
-                        if (file.size > 5 * 1024 * 1024) {
-                          error = 'Images must be smaller than 5MB';
-                          processed++;
-                          if (processed === files.length && error) setGenerateError(error);
-                          return;
-                        }
-                        const reader = new FileReader();
-                        reader.onload = (ev) => {
-                          if (ev.target?.result) {
-                            newImages.push(ev.target.result as string);
-                          }
-                          processed++;
-                          if (processed === files.length) {
-                            if (error) setGenerateError(error);
-                            else {
-                              setGenerateError(null);
-                              setReferenceImages(prev => [...prev, ...newImages]);
-                            }
-                          }
-                        };
-                        reader.readAsDataURL(file);
-                      });
+            {/* Drag and Drop Zone */}
+            <div
+              className={`relative w-full rounded-xl border-2 border-dashed transition-all duration-200 p-6 flex flex-col items-center justify-center gap-3 cursor-pointer group
+                ${isDragging
+                  ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)]/10 scale-[1.005]'
+                  : 'border-[var(--color-border)] hover:border-[var(--color-accent-muted)] hover:bg-[var(--color-surface-subtle)]'
+                }`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDragging(true);
+              }}
+              onDragEnter={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDragging(true);
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDragging(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDragging(false);
+                const files = Array.from(e.dataTransfer.files || []);
+                if (files.length > 0) {
+                  const newImages: string[] = [];
+                  let error: string | null = null;
+                  let processed = 0;
+                  files.forEach(file => {
+                    // Check type
+                    if (!file.type.startsWith('image/')) {
+                      processed++;
+                      if (processed === files.length && !error && newImages.length > 0) {
+                        setReferenceImages(prev => [...prev, ...newImages]);
+                        setGenerateError(null);
+                      }
+                      return;
                     }
-                  }}
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="text-sm px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-subtle)] hover:bg-[var(--color-surface-muted)] text-[var(--color-foreground)] transition flex items-center gap-2"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" x2="12" y1="3" y2="15" /></svg>
-                  Upload Reference Images
-                </button>
+                    if (file.size > 5 * 1024 * 1024) {
+                      error = 'Images must be smaller than 5MB';
+                      processed++;
+                      if (processed === files.length && error) setGenerateError(error);
+                      return;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      if (ev.target?.result) {
+                        newImages.push(ev.target.result as string);
+                      }
+                      processed++;
+                      if (processed === files.length) {
+                        if (error) setGenerateError(error);
+                        else {
+                          setGenerateError(null);
+                          setReferenceImages(prev => [...prev, ...newImages]);
+                        }
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  });
+                }
+              }}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                ref={fileInputRef}
+                onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  if (files.length > 0) {
+                    const newImages: string[] = [];
+                    let error: string | null = null;
+                    let processed = 0;
+                    files.forEach(file => {
+                      if (file.size > 5 * 1024 * 1024) {
+                        error = 'Images must be smaller than 5MB';
+                        processed++;
+                        if (processed === files.length && error) setGenerateError(error);
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                        if (ev.target?.result) {
+                          newImages.push(ev.target.result as string);
+                        }
+                        processed++;
+                        if (processed === files.length) {
+                          if (error) setGenerateError(error);
+                          else {
+                            setGenerateError(null);
+                            setReferenceImages(prev => [...prev, ...newImages]);
+                          }
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                    });
+                  }
+                }}
+              />
+              <div className="rounded-full bg-[var(--color-surface-subtle)] p-3 group-hover:scale-110 transition-transform">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--color-muted-foreground)]"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" x2="12" y1="3" y2="15" /></svg>
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-medium text-[var(--color-foreground)]">Drag & drop reference images</p>
+                <p className="text-xs text-[var(--color-muted-foreground)] mt-1">or click to browse</p>
               </div>
             </div>
 
