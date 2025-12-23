@@ -4,6 +4,26 @@ import { verifyTeacherAccess } from '@/lib/session';
 import PDFDocument from 'pdfkit';
 import { Buffer } from 'node:buffer';
 import path from 'path';
+import fs from 'fs';
+
+const resolveImageBuffer = (data: string | null): Buffer | null => {
+  if (!data) return null;
+  try {
+    if (data.startsWith('/api/uploads/')) {
+      const filename = data.split('/').pop();
+      if (!filename) return null;
+      const filePath = path.join(process.cwd(), 'uploads', filename);
+      if (fs.existsSync(filePath)) {
+        return fs.readFileSync(filePath);
+      }
+      return null;
+    }
+    const b64 = data.replace(/^data:image\/\w+;base64,/, '');
+    return Buffer.from(b64, 'base64');
+  } catch (e) {
+    return null;
+  }
+};
 
 function formatDate(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
@@ -22,7 +42,7 @@ export async function GET() {
     if (!teacherAccess) {
       return NextResponse.json({ message: 'Teacher access only.' }, { status: 403 });
     }
-    
+
     const sessionId = teacherAccess.sessionId;
 
     // Fetch session with all related data
@@ -40,6 +60,7 @@ export async function GET() {
             rootSubmissionId: true,
             parentSubmissionId: true,
             imageData: true,
+            referenceImages: true,
             imageMimeType: true,
             errorMessage: true,
             isShared: true,
@@ -232,93 +253,80 @@ export async function GET() {
 
             // List all submissions in this session (original + refinements)
             for (const submission of submissions) {
-              if (submission.revisionIndex === 0) {
-                // Original submission
-                doc.fontSize(11).fillColor('#000000');
-                doc.text('Original Image:', { indent: 20 });
-                doc.fontSize(10).fillColor('#333333');
-                doc.text(`Prompt: "${submission.prompt}"`, { indent: 30, width: 450 });
-                doc.fontSize(9).fillColor('#666666');
-                doc.text(`Created: ${formatDate(submission.createdAt)}`, { indent: 30 });
+              const isOriginal = submission.revisionIndex === 0;
+              const indent = isOriginal ? 20 : 30;
+              const label = isOriginal ? 'Original Image' : `Refinement ${submission.revisionIndex}`;
 
-                // Add image if available
-                if (submission.imageData && submission.status === 'SUCCESS') {
+              const startY = doc.y;
+              if (startY > doc.page.height - 150) doc.addPage();
+
+              doc.fontSize(11).fillColor('#000000').text(`${label}:`, { indent });
+
+              // 1. Reference Images
+              let refImages: string[] = [];
+              if (submission.referenceImages) {
+                try {
+                  const parsed = JSON.parse(submission.referenceImages);
+                  if (Array.isArray(parsed)) refImages = parsed;
+                } catch (e) { /* ignore */ }
+              }
+
+              if (refImages.length > 0) {
+                const refIndent = indent + 10;
+                doc.fontSize(9).fillColor('#555555').text('Reference Images:', { indent: refIndent });
+                doc.moveDown(0.2);
+                let refX = doc.page.margins.left + refIndent;
+                const refY = doc.y;
+                let maxHeight = 0;
+
+                for (const ref of refImages) {
+                  const buf = resolveImageBuffer(ref);
+                  if (buf) {
+                    try {
+                      doc.image(buf, refX, refY, { fit: [80, 80] });
+                      refX += 90;
+                      if (80 > maxHeight) maxHeight = 80;
+                    } catch (e) { }
+                  }
+                }
+                if (maxHeight > 0) doc.y = refY + maxHeight + 5;
+              }
+
+              // 2. Prompt
+              const contentIndent = indent + 10;
+              doc.fontSize(10).fillColor('#333333');
+              doc.text(`Prompt: "${submission.prompt}"`, { indent: contentIndent, width: 450 });
+              doc.fontSize(9).fillColor('#666666');
+              doc.text(`Created: ${formatDate(submission.createdAt)}`, { indent: contentIndent });
+
+              // 3. Generated Image
+              if (submission.imageData && submission.status === 'SUCCESS') {
+                doc.moveDown(0.2);
+                const buf = resolveImageBuffer(submission.imageData);
+                if (buf) {
                   try {
-                    const imageBuffer = Buffer.from(submission.imageData, 'base64');
-                    const imageWidth = 200;
-                    const imageHeight = 150;
-                    const x = doc.page.margins.left + 30;
-                    const y = doc.y;
+                    if (doc.y + 200 > doc.page.height) doc.addPage();
 
-                    doc.image(imageBuffer, x, y, {
-                      width: imageWidth,
-                      height: imageHeight,
-                      fit: [imageWidth, imageHeight],
-                    });
-                    doc.y = y + imageHeight + 10;
-                  } catch (imageError) {
-                    console.error('Failed to embed image in PDF:', imageError);
-                    doc.fontSize(9).fillColor('#666666');
-                    doc.text('[Image could not be embedded]', { indent: 30 });
+                    const imgX = doc.page.margins.left + contentIndent;
+                    doc.image(buf, imgX, doc.y, { fit: [200, 200] });
+                    doc.y += 210;
+                  } catch (e) {
+                    doc.text('[Image Error]', { indent: contentIndent });
                   }
-                }
-
-                if (submission.status === 'ERROR') {
-                  doc.fontSize(9).fillColor('#DC2626');
-                  doc.text(`Status: ERROR - ${submission.errorMessage || 'Generation failed'}`, { indent: 30 });
-                } else if (submission.status === 'PENDING') {
-                  doc.fontSize(9).fillColor('#F59E0B');
-                  doc.text('Status: PENDING', { indent: 30 });
                 } else {
-                  doc.fontSize(9).fillColor('#10B981');
-                  doc.text('Status: SUCCESS', { indent: 30 });
-                  if (submission.isShared) {
-                    doc.fontSize(9).fillColor('#8B5CF6');
-                    doc.text('Shared with class', { indent: 30 });
-                  }
-                }
-              } else {
-                // Refinement
-                doc.fontSize(10).fillColor('#000000');
-                doc.text(`Refinement ${submission.revisionIndex}:`, { indent: 30 });
-                doc.fontSize(10).fillColor('#333333');
-                doc.text(`Prompt: "${submission.prompt}"`, { indent: 40, width: 440 });
-                doc.fontSize(9).fillColor('#666666');
-                doc.text(`Created: ${formatDate(submission.createdAt)}`, { indent: 40 });
-
-                // Add image if available
-                if (submission.imageData && submission.status === 'SUCCESS') {
-                  try {
-                    const imageBuffer = Buffer.from(submission.imageData, 'base64');
-                    const imageWidth = 180;
-                    const imageHeight = 135;
-                    const x = doc.page.margins.left + 40;
-                    const y = doc.y;
-
-                    doc.image(imageBuffer, x, y, {
-                      width: imageWidth,
-                      height: imageHeight,
-                      fit: [imageWidth, imageHeight],
-                    });
-                    doc.y = y + imageHeight + 10;
-                  } catch (imageError) {
-                    console.error('Failed to embed image in PDF:', imageError);
-                    doc.fontSize(9).fillColor('#666666');
-                    doc.text('[Image could not be embedded]', { indent: 40 });
-                  }
-                }
-
-                if (submission.status === 'ERROR') {
-                  doc.fontSize(9).fillColor('#DC2626');
-                  doc.text(`Status: ERROR - ${submission.errorMessage || 'Generation failed'}`, { indent: 40 });
-                } else if (submission.status === 'PENDING') {
-                  doc.fontSize(9).fillColor('#F59E0B');
-                  doc.text('Status: PENDING', { indent: 40 });
-                } else {
-                  doc.fontSize(9).fillColor('#10B981');
-                  doc.text('Status: SUCCESS', { indent: 40 });
+                  doc.text('[Image Not Found]', { indent: contentIndent });
                 }
               }
+
+              // Status
+              if (submission.status === 'ERROR') {
+                doc.fontSize(9).fillColor('#DC2626').text(`Error: ${submission.errorMessage}`, { indent: contentIndent });
+              } else if (submission.status === 'PENDING') {
+                doc.fontSize(9).fillColor('#F59E0B').text('Status: PENDING', { indent: contentIndent });
+              } else if (submission.status === 'SUCCESS' && submission.isShared) {
+                doc.fontSize(9).fillColor('#8B5CF6').text('Shared with class', { indent: contentIndent });
+              }
+
               doc.moveDown(0.5);
             }
 

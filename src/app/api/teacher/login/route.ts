@@ -18,38 +18,53 @@ export async function POST(request: Request) {
     const json = await request.json();
     const { username, password } = bodySchema.parse(json);
 
-    // Verify credentials with external authentication service
-    let authResponse;
+    // Verify credentials
+    let externalUsername: string | null = null;
+    let authServiceAvailable = true;
+
+    // 1. Try External Authentication
     try {
-      authResponse = await fetch(`${AUTH_SERVICE_URL}/verify`, {
+      const authResponse = await fetch(`${AUTH_SERVICE_URL}/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       });
-    } catch (fetchError) {
-      console.error('Failed to connect to authentication service:', fetchError);
-      return NextResponse.json(
-        { message: 'Authentication service unavailable. Please try again later.' },
-        { status: 503 }
-      );
+
+      if (authResponse.ok) {
+        const authResult = await authResponse.json();
+        if (authResult.success && authResult.user) {
+          externalUsername = authResult.user.username;
+        }
+      } else {
+        // External auth failed (401 etc) or service error (500)
+        // We will try local auth next
+      }
+    } catch (maxError) {
+      console.warn('Authentication service unavailable, trying local auth.', maxError);
+      authServiceAvailable = false;
     }
 
-    if (!authResponse.ok) {
-      const errorData = await authResponse.json().catch(() => ({ error: 'Authentication failed' }));
-      return NextResponse.json(
-        { message: errorData.error || 'Invalid credentials.' },
-        { status: authResponse.status === 401 ? 401 : 500 }
-      );
+    // 2. Local fallback if external failed
+    if (!externalUsername) {
+      const { compare } = await import('bcryptjs');
+      const teacher = await prisma.teacher.findUnique({
+        where: { username },
+        select: { id: true, username: true, passwordHash: true }
+      });
+
+      if (teacher && teacher.passwordHash) {
+        const match = await compare(password, teacher.passwordHash);
+        if (match) {
+          externalUsername = teacher.username;
+        }
+      }
     }
 
-    const authResult = await authResponse.json();
-    if (!authResult.success || !authResult.user) {
+    if (!externalUsername) {
       return NextResponse.json({ message: 'Invalid credentials.' }, { status: 401 });
     }
 
-    const externalUsername = authResult.user.username;
-
-    console.log(`Teacher login attempt: ${externalUsername}`);
+    console.log(`Teacher login successful: ${externalUsername}`);
 
     // Find or create teacher record in local database (for session management)
     let teacher = await prisma.teacher.findUnique({
@@ -61,12 +76,12 @@ export async function POST(request: Request) {
       },
     });
 
-    // Create teacher record if it doesn't exist (first time login)
+    // Create teacher record if it doesn't exist (first time login from external)
     if (!teacher) {
       teacher = await prisma.teacher.create({
         data: {
           username: externalUsername,
-          passwordHash: '', // Not used - authentication is external
+          passwordHash: '', // Not used - authentication is external or already verified
         },
         select: {
           id: true,
