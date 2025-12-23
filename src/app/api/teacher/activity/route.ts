@@ -7,15 +7,34 @@ export async function GET() {
   if (!teacherAccess) {
     return NextResponse.json({ message: 'Teacher access only.' }, { status: 403 });
   }
-  
+
   const sessionId = teacherAccess.sessionId;
 
   const session = await prisma.session.findUnique({
     where: { id: sessionId },
-    include: {
+    select: {
+      id: true,
+      createdAt: true,
+      isActive: true,
+      chatEnabled: true,
+      maxStudentEdits: true,
       promptEntries: {
         orderBy: { createdAt: 'desc' },
-        include: {
+        select: {
+          id: true,
+          createdAt: true,
+          // updatedAt: true, // removed
+          prompt: true,
+          status: true,
+          role: true,
+          revisionIndex: true,
+          parentSubmissionId: true,
+          rootSubmissionId: true,
+          imageData: true,
+          imageMimeType: true,
+          errorMessage: true,
+          referenceImages: true,
+          isShared: true,
           student: {
             select: {
               username: true,

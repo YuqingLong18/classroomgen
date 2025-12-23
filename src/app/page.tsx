@@ -115,7 +115,7 @@ export default function StudentHome() {
   const [commentErrors, setCommentErrors] = useState<Record<string, string | null>>({});
   const [commentSubmittingId, setCommentSubmittingId] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<{ src: string; prompt: string; mimeType: string | null } | null>(null);
-  const [referenceImage, setReferenceImage] = useState<string | null>(null);
+  const [referenceImages, setReferenceImages] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sessionRequestIdRef = useRef(0);
 
@@ -327,8 +327,8 @@ export default function StudentHome() {
           size,
         };
 
-        if (referenceImage && !parentSubmissionId) {
-          body.referenceImage = referenceImage;
+        if (referenceImages.length > 0 && !parentSubmissionId) {
+          body.referenceImages = referenceImages;
         }
 
         const res = await fetch('/api/images/generate', {
@@ -345,7 +345,7 @@ export default function StudentHome() {
         }
 
         setPrompt('');
-        setReferenceImage(null);
+        setReferenceImages([]);
         if (fileInputRef.current) fileInputRef.current.value = '';
         // Reload submissions to show the new PENDING submission
         // Polling will automatically update it when generation completes
@@ -699,21 +699,39 @@ export default function StudentHome() {
                 <input
                   type="file"
                   accept="image/*"
+                  multiple
                   className="hidden"
                   ref={fileInputRef}
                   onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      if (file.size > 5 * 1024 * 1024) {
-                        setGenerateError('Image must be smaller than 5MB');
-                        return;
-                      }
-                      const reader = new FileReader();
-                      reader.onload = (ev) => {
-                        setReferenceImage(ev.target?.result as string);
-                        setGenerateError(null);
-                      };
-                      reader.readAsDataURL(file);
+                    const files = Array.from(e.target.files || []);
+                    if (files.length > 0) {
+                      const newImages: string[] = [];
+                      let error: string | null = null;
+
+                      let processed = 0;
+                      files.forEach(file => {
+                        if (file.size > 5 * 1024 * 1024) {
+                          error = 'Images must be smaller than 5MB';
+                          processed++;
+                          if (processed === files.length && error) setGenerateError(error);
+                          return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          if (ev.target?.result) {
+                            newImages.push(ev.target.result as string);
+                          }
+                          processed++;
+                          if (processed === files.length) {
+                            if (error) setGenerateError(error);
+                            else {
+                              setGenerateError(null);
+                              setReferenceImages(prev => [...prev, ...newImages]);
+                            }
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      });
                     }
                   }}
                 />
@@ -721,29 +739,32 @@ export default function StudentHome() {
                   onClick={() => fileInputRef.current?.click()}
                   className="text-sm px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-subtle)] hover:bg-[var(--color-surface-muted)] text-[var(--color-foreground)] transition flex items-center gap-2"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></svg>
-                  {referenceImage ? 'Change Image' : 'Add Reference Image'}
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" x2="12" y1="3" y2="15" /></svg>
+                  Upload Reference Images
                 </button>
               </div>
             </div>
 
-            {referenceImage && (
-              <div className="relative w-24 h-24 rounded-lg overflow-hidden border border-[var(--color-border)] group">
-                <Image
-                  src={referenceImage}
-                  alt="Reference"
-                  fill
-                  className="object-cover"
-                />
-                <button
-                  onClick={() => {
-                    setReferenceImage(null);
-                    if (fileInputRef.current) fileInputRef.current.value = '';
-                  }}
-                  className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition text-white"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-                </button>
+            {referenceImages.length > 0 && (
+              <div className="flex flex-wrap gap-3">
+                {referenceImages.map((img, idx) => (
+                  <div key={idx} className="relative w-24 h-24 rounded-lg overflow-hidden border border-[var(--color-border)] group">
+                    <Image
+                      src={img}
+                      alt={`Reference ${idx + 1}`}
+                      fill
+                      className="object-cover"
+                    />
+                    <button
+                      onClick={() => {
+                        setReferenceImages(prev => prev.filter((_, i) => i !== idx));
+                      }}
+                      className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition text-white"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -759,7 +780,7 @@ export default function StudentHome() {
             <button
               onClick={() => {
                 setPrompt('');
-                setReferenceImage(null);
+                setReferenceImages([]);
                 if (fileInputRef.current) fileInputRef.current.value = '';
                 setGenerateError(null);
               }}

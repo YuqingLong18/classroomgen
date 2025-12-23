@@ -29,6 +29,7 @@ interface ActivitySubmission {
   errorMessage: string | null;
   isShared: boolean;
   studentUsername: string | null;
+  referenceImages: string | null; // JSON string
 }
 
 interface ActivityApiSubmission extends Omit<ActivitySubmission, 'studentUsername'> {
@@ -1288,6 +1289,24 @@ export default function TeacherDashboard() {
                                 {submission.prompt}
                               </p>
 
+                              {/* Reference Images Display */}
+                              {submission.referenceImages && (() => {
+                                try {
+                                  const refs = JSON.parse(submission.referenceImages) as string[];
+                                  if (refs.length > 0) {
+                                    return (
+                                      <div className="flex gap-1 overflow-x-auto py-1 scrollbar-thin">
+                                        {refs.map((refImg, i) => (
+                                          <div key={i} className="relative w-10 h-10 flex-shrink-0 rounded border border-gray-200 overflow-hidden bg-gray-50">
+                                            <Image src={refImg} alt="Ref" fill className="object-cover" />
+                                          </div>
+                                        ))}
+                                      </div>
+                                    );
+                                  }
+                                } catch (e) { return null; }
+                              })()}
+
                               {/* Image Preview or Status */}
                               {submission.status === 'PENDING' ? (
                                 <div className="h-32 flex flex-col items-center justify-center gap-2 bg-gray-50 rounded-lg">
@@ -1329,9 +1348,9 @@ export default function TeacherDashboard() {
                                   )}
                                 </div>
                               </div>
-                              <div className="text-xs text-gray-500">
+                              <span className="text-sm text-gray-500">
                                 {toDisplayTime(submission.createdAt)}
-                              </div>
+                              </span>
                             </div>
                           </div>
                         );

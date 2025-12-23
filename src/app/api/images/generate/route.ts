@@ -10,6 +10,7 @@ const bodySchema = z.object({
   parentSubmissionId: z.string().optional(),
   size: z.string().optional(),
   referenceImage: z.string().optional(),
+  referenceImages: z.array(z.string()).optional(),
 });
 
 export async function POST(request: Request) {
@@ -26,7 +27,7 @@ export async function POST(request: Request) {
   const body = await request.json();
 
   try {
-    const { prompt, parentSubmissionId, size, referenceImage } = bodySchema.parse(body);
+    const { prompt, parentSubmissionId, size, referenceImage, referenceImages } = bodySchema.parse(body);
 
     const session = await prisma.session.findUnique({
       where: { id: sessionId },
@@ -93,6 +94,14 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: 'Invalid or too large reference image.' }, { status: 400 });
       }
       baseImageDataUrl = referenceImage;
+    } else if (referenceImages && referenceImages.length > 0) {
+      // Validate all images
+      for (const img of referenceImages) {
+        if (!img.startsWith('data:image/') || img.length > 5 * 1024 * 1024) {
+          return NextResponse.json({ message: 'One or more reference images are invalid or too large.' }, { status: 400 });
+        }
+      }
+      // We will use referenceImages array directly
     } else if (parentSubmissionId) {
       const parent = await prisma.promptSubmission.findUnique({
         where: { id: parentSubmissionId },
@@ -146,12 +155,17 @@ export async function POST(request: Request) {
         parentSubmissionId: parentSubmissionId ?? null,
         revisionIndex,
         status: SubmissionStatus.PENDING, // Explicitly set to PENDING
+        referenceImages: referenceImages ? JSON.stringify(referenceImages) : (referenceImage ? JSON.stringify([referenceImage]) : null),
       },
     });
 
     // Enqueue the image generation job for background processing
     // This returns immediately, allowing the request to complete quickly
-    enqueueImageGeneration(submission.id, prompt, { baseImageDataUrl, size }, session.teacherId);
+    enqueueImageGeneration(submission.id, prompt, {
+      baseImageDataUrl,
+      referenceImages: referenceImages || (referenceImage ? [referenceImage] : undefined),
+      size
+    }, session.teacherId);
 
     // Return the submission immediately with PENDING status
     // The client will poll for updates

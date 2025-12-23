@@ -76,6 +76,7 @@ model PromptSubmission {
   imageData          String?
   imageMimeType      String?
   errorMessage       String?
+  referenceImages    String? // JSON string of array of base64 images
   isShared           Boolean             @default(false)
   likes              SubmissionLike[]
   comments           SubmissionComment[]

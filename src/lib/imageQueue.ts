@@ -9,7 +9,8 @@ import { prisma } from '@/lib/prisma';
 import { SubmissionStatus } from '@prisma/client';
 
 type CallOptions = {
-  baseImageDataUrl?: string;
+  baseImageDataUrl?: string; // Legacy support or single image
+  referenceImages?: string[]; // New multiple image support
   size?: string;
 };
 
@@ -148,12 +149,17 @@ async function callImageGeneration(prompt: string, options: CallOptions = {}, te
       messages: [
         {
           role: 'user',
-          content: options.baseImageDataUrl
+          content: (options.referenceImages && options.referenceImages.length > 0)
             ? [
               { type: 'text', text: prompt },
-              { type: 'image_url', image_url: { url: options.baseImageDataUrl } },
+              ...options.referenceImages.map(img => ({ type: 'image_url', image_url: { url: img } }))
             ]
-            : prompt,
+            : (options.baseImageDataUrl
+              ? [
+                { type: 'text', text: prompt },
+                { type: 'image_url', image_url: { url: options.baseImageDataUrl } },
+              ]
+              : prompt),
         },
       ],
     };
@@ -249,9 +255,13 @@ async function callImageGeneration(prompt: string, options: CallOptions = {}, te
     size: options.size || '2048x2048', // Use provided size or default
   };
 
-  if (options.baseImageDataUrl) {
+  if (options.referenceImages && options.referenceImages.length > 0) {
+    // Volcengine uses 'image' parameter which can be a single image or list of images
+    // See: https://www.volcengine.com/docs/82379/1541523?lang=zh
+    // If multiple images, pass the array directly.
+    body.image = options.referenceImages;
+  } else if (options.baseImageDataUrl) {
     // Volcengine uses 'image' parameter for reference image (single image)
-    // See: https://www.volcengine.com/docs/82379/1824121
     body.image = options.baseImageDataUrl;
   }
 
