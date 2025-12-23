@@ -115,6 +115,8 @@ export default function StudentHome() {
   const [commentErrors, setCommentErrors] = useState<Record<string, string | null>>({});
   const [commentSubmittingId, setCommentSubmittingId] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<{ src: string; prompt: string; mimeType: string | null } | null>(null);
+  const [referenceImage, setReferenceImage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const sessionRequestIdRef = useRef(0);
 
   // ... (keep existing useEffects and handlers)
@@ -319,15 +321,21 @@ export default function StudentHome() {
       setGeneratingId(parentSubmissionId ?? 'new');
       setGenerateError(null);
       try {
+        const body: any = {
+          prompt: textPrompt,
+          parentSubmissionId,
+          size,
+        };
+
+        if (referenceImage && !parentSubmissionId) {
+          body.referenceImage = referenceImage;
+        }
+
         const res = await fetch('/api/images/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({
-            prompt: textPrompt,
-            parentSubmissionId,
-            size,
-          }),
+          body: JSON.stringify(body),
         });
 
         if (!res.ok) {
@@ -337,6 +345,8 @@ export default function StudentHome() {
         }
 
         setPrompt('');
+        setReferenceImage(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
         // Reload submissions to show the new PENDING submission
         // Polling will automatically update it when generation completes
         await loadSubmissions();
@@ -666,21 +676,76 @@ export default function StudentHome() {
             placeholder={t.student.promptPlaceholder}
             className="w-full min-h-28 rounded-xl border border-[var(--color-border)] bg-[var(--color-input)] px-4 py-3 text-base text-[var(--color-foreground)] placeholder:text-[var(--color-muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
           />
-          <div className="flex items-center gap-3">
-            <label htmlFor="image-size" className="text-sm font-medium text-[var(--color-foreground)]">
-              {t.student.imageSize}:
-            </label>
-            <select
-              id="image-size"
-              value={size}
-              onChange={(e) => setSize(e.target.value)}
-              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
-            >
-              <option value="2048x2048">{t.student.sizeSquare}</option>
-              <option value="2560x1440">{t.student.sizeLandscape}</option>
-              <option value="1440x2560">{t.student.sizePortrait}</option>
-              <option value="4096x4096">{t.student.sizeLargeSquare}</option>
-            </select>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-3">
+                <label htmlFor="image-size" className="text-sm font-medium text-[var(--color-foreground)]">
+                  {t.student.imageSize}:
+                </label>
+                <select
+                  id="image-size"
+                  value={size}
+                  onChange={(e) => setSize(e.target.value)}
+                  className="rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-muted)] focus:border-[var(--color-accent)] transition"
+                >
+                  <option value="2048x2048">{t.student.sizeSquare}</option>
+                  <option value="2560x1440">{t.student.sizeLandscape}</option>
+                  <option value="1440x2560">{t.student.sizePortrait}</option>
+                  <option value="4096x4096">{t.student.sizeLargeSquare}</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  ref={fileInputRef}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      if (file.size > 5 * 1024 * 1024) {
+                        setGenerateError('Image must be smaller than 5MB');
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                        setReferenceImage(ev.target?.result as string);
+                        setGenerateError(null);
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-sm px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-subtle)] hover:bg-[var(--color-surface-muted)] text-[var(--color-foreground)] transition flex items-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></svg>
+                  {referenceImage ? 'Change Image' : 'Add Reference Image'}
+                </button>
+              </div>
+            </div>
+
+            {referenceImage && (
+              <div className="relative w-24 h-24 rounded-lg overflow-hidden border border-[var(--color-border)] group">
+                <Image
+                  src={referenceImage}
+                  alt="Reference"
+                  fill
+                  className="object-cover"
+                />
+                <button
+                  onClick={() => {
+                    setReferenceImage(null);
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                  }}
+                  className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition text-white"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                </button>
+              </div>
+            )}
           </div>
           {generateError ? <p className="text-sm text-rose-600">{generateError}</p> : null}
           <div className="flex flex-wrap items-center gap-3 justify-between">
@@ -694,6 +759,8 @@ export default function StudentHome() {
             <button
               onClick={() => {
                 setPrompt('');
+                setReferenceImage(null);
+                if (fileInputRef.current) fileInputRef.current.value = '';
                 setGenerateError(null);
               }}
               className="text-sm text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] transition"

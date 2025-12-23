@@ -9,6 +9,7 @@ const bodySchema = z.object({
   prompt: z.string().min(5, 'Please write a longer prompt to help the AI.'),
   parentSubmissionId: z.string().optional(),
   size: z.string().optional(),
+  referenceImage: z.string().optional(),
 });
 
 export async function POST(request: Request) {
@@ -22,10 +23,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'Only students can generate images in this view.' }, { status: 403 });
   }
 
-    const body = await request.json();
+  const body = await request.json();
 
-    try {
-    const { prompt, parentSubmissionId, size } = bodySchema.parse(body);
+  try {
+    const { prompt, parentSubmissionId, size, referenceImage } = bodySchema.parse(body);
 
     const session = await prisma.session.findUnique({
       where: { id: sessionId },
@@ -85,7 +86,14 @@ export async function POST(request: Request) {
 
     let baseImageDataUrl: string | undefined;
 
-    if (parentSubmissionId) {
+    if (referenceImage) {
+      // User uploaded a reference image - treat as a fresh generation with guidance
+      // Basic validation for data URL
+      if (!referenceImage.startsWith('data:image/') || referenceImage.length > 5 * 1024 * 1024) { // 5MB limit check (rough)
+        return NextResponse.json({ message: 'Invalid or too large reference image.' }, { status: 400 });
+      }
+      baseImageDataUrl = referenceImage;
+    } else if (parentSubmissionId) {
       const parent = await prisma.promptSubmission.findUnique({
         where: { id: parentSubmissionId },
         select: {
