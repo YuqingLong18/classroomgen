@@ -5,15 +5,20 @@ import { existsSync } from 'fs';
 
 export async function GET(
     request: NextRequest,
-    { params }: { params: Promise<{ filename: string }> }
+    { params }: { params: Promise<{ path: string[] }> }
 ) {
-    const { filename } = await params;
+    const { path: pathSegments } = await params;
 
-    if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
-        return new NextResponse('Invalid filename', { status: 400 });
+    if (!pathSegments || pathSegments.length === 0) {
+        return new NextResponse('Invalid path', { status: 400 });
     }
 
-    const filepath = path.join(process.cwd(), 'uploads', filename);
+    // Security check for each segment
+    if (pathSegments.some(segment => segment.includes('..') || segment.includes('\\'))) {
+        return new NextResponse('Invalid path', { status: 400 });
+    }
+
+    const filepath = path.join(process.cwd(), 'uploads', ...pathSegments);
 
     if (!existsSync(filepath)) {
         return new NextResponse('File not found', { status: 404 });
@@ -21,6 +26,7 @@ export async function GET(
 
     try {
         const fileBuffer = await readFile(filepath);
+        const filename = pathSegments[pathSegments.length - 1];
         const ext = path.extname(filename).toLowerCase();
         let contentType = 'application/octet-stream';
         if (ext === '.png') contentType = 'image/png';

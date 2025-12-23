@@ -146,12 +146,33 @@ class ImageGenerationQueue {
 
       const { imageData, mimeType } = await callImageGeneration(prompt, options, teacherApiKey);
 
+      // Fetch metadata for file organization
+      const submissionInfo = await prisma.promptSubmission.findUnique({
+        where: { id: submissionId },
+        select: {
+          student: {
+            select: {
+              session: {
+                select: {
+                  classroomCode: true,
+                  teacher: { select: { username: true } }
+                }
+              }
+            }
+          }
+        }
+      });
+
+      const teacherName = submissionInfo?.student?.session?.teacher?.username || 'unknown';
+      const classroomCode = submissionInfo?.student?.session?.classroomCode || 'unknown';
+      const subDir = `${teacherName}/${classroomCode}`;
+
       // Save to disk
       let finalImageData = imageData;
       const { saveImage } = await import('@/lib/storage');
       try {
         const buffer = Buffer.from(imageData, 'base64');
-        finalImageData = await saveImage(buffer, mimeType);
+        finalImageData = await saveImage(buffer, mimeType, subDir);
       } catch (err) {
         console.error(`Failed to save image to disk for ${submissionId}:`, err);
       }

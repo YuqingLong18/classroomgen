@@ -14,8 +14,9 @@
 /coverage
 
 # database
-uploads/
-test-results/
+# database
+/uploads/
+/test-results/
 
 # next.js
 /.next/

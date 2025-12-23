@@ -10,9 +10,9 @@ const resolveImageBuffer = (data: string | null): Buffer | null => {
   if (!data) return null;
   try {
     if (data.startsWith('/api/uploads/')) {
-      const filename = data.split('/').pop();
-      if (!filename) return null;
-      const filePath = path.join(process.cwd(), 'uploads', filename);
+      const relativePath = data.split('/api/uploads/')[1];
+      if (!relativePath) return null;
+      const filePath = path.join(process.cwd(), 'uploads', ...relativePath.split('/'));
       if (fs.existsSync(filePath)) {
         return fs.readFileSync(filePath);
       }

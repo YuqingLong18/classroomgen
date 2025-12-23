@@ -35,6 +35,12 @@ export async function POST(request: Request) {
         isActive: true,
         maxStudentEdits: true,
         teacherId: true,
+        classroomCode: true,
+        teacher: {
+          select: {
+            username: true,
+          },
+        },
       },
     });
 
@@ -90,6 +96,10 @@ export async function POST(request: Request) {
 
     const isValidSize = (img: string) => img.length <= 5 * 1024 * 1024;
 
+    const subDir = session.teacher
+      ? `${session.teacher.username}/${session.classroomCode}`
+      : `${session.teacherId || 'unknown'}/${session.classroomCode}`;
+
     if (referenceImages && referenceImages.length > 0) {
       optimizedReferenceImages = [];
       const { saveImage } = await import('@/lib/storage');
@@ -104,7 +114,7 @@ export async function POST(request: Request) {
           if (matches && matches.length === 3) {
             const mimeType = matches[1];
             const buffer = Buffer.from(matches[2], 'base64');
-            const path = await saveImage(buffer, mimeType);
+            const path = await saveImage(buffer, mimeType, subDir);
             optimizedReferenceImages.push(path);
           } else {
             optimizedReferenceImages.push(img);
@@ -126,8 +136,8 @@ export async function POST(request: Request) {
         if (matches && matches.length === 3) {
           const mimeType = matches[1];
           const buffer = Buffer.from(matches[2], 'base64');
-          const path = await saveImage(buffer, mimeType);
-          optimizedReferenceImages = [path];
+          const path = await saveImage(buffer, mimeType, subDir);
+          optimizedReferenceImages.push(path);
         } else {
           optimizedReferenceImages = [referenceImage];
         }
@@ -179,9 +189,9 @@ export async function POST(request: Request) {
         try {
           const fs = await import('fs/promises');
           const path = await import('path');
-          const filename = parent.imageData.split('/').pop();
-          if (filename) {
-            const filepath = path.join(process.cwd(), 'uploads', filename);
+          const relativePath = parent.imageData.split('/api/uploads/')[1];
+          if (relativePath) {
+            const filepath = path.join(process.cwd(), 'uploads', ...relativePath.split('/'));
             const buffer = await fs.readFile(filepath);
             baseImageDataUrl = `data:${parent.imageMimeType ?? 'image/png'};base64,${buffer.toString('base64')}`;
           }
