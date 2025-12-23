@@ -60,6 +60,7 @@ interface Submission {
 interface FetchSubmissionsResponse {
   submissions: Submission[];
   role?: 'student' | 'teacher';
+  nextCursor?: string | null;
 }
 
 type SessionResponse = {
@@ -201,7 +202,7 @@ export default function StudentHome() {
 
       const res = await fetch(url.toString(), { credentials: 'include' });
       if (!res.ok) return;
-      const data: any = await res.json(); // Use any to avoid type errors with new fields
+      const data = (await res.json()) as FetchSubmissionsResponse;
 
       const newSubmissions = data.submissions ?? [];
       setNextCursor(data.nextCursor ?? null);
@@ -211,7 +212,7 @@ export default function StudentHome() {
         setSubmissions(prev => {
           // Filter out duplicates just in case
           const existingIds = new Set(prev.map(s => s.id));
-          const uniqueNew = newSubmissions.filter((s: any) => !existingIds.has(s.id));
+          const uniqueNew = newSubmissions.filter((s) => !existingIds.has(s.id));
           return [...prev, ...uniqueNew];
         });
       } else {
@@ -219,10 +220,10 @@ export default function StudentHome() {
         if (isPoll) {
           // Smart merge for polling
           setSubmissions(prev => {
-            const updatedMap = new Map(newSubmissions.map((s: any) => [s.id, s]));
+            const updatedMap = new Map(newSubmissions.map((s) => [s.id, s]));
             const merged = prev.map(s => {
               if (updatedMap.has(s.id)) {
-                return updatedMap.get(s.id);
+                return updatedMap.get(s.id)!;
               }
               return s;
             });
@@ -231,7 +232,7 @@ export default function StudentHome() {
             // Note: This logic assumes new items are always at the top.
             // Check for items in newSubmissions that are NOT in prev
             const prevIds = new Set(prev.map(s => s.id));
-            const brandNew = newSubmissions.filter((s: any) => !prevIds.has(s.id));
+            const brandNew = newSubmissions.filter((s) => !prevIds.has(s.id));
 
             return [...brandNew, ...merged];
           });
@@ -372,7 +373,12 @@ export default function StudentHome() {
       setGeneratingId(parentSubmissionId ?? 'new');
       setGenerateError(null);
       try {
-        const body: any = {
+        const body: {
+          prompt: string;
+          parentSubmissionId?: string;
+          size: string;
+          referenceImages?: string[];
+        } = {
           prompt: textPrompt,
           parentSubmissionId,
           size,
@@ -408,7 +414,7 @@ export default function StudentHome() {
         setGeneratingId(null);
       }
     },
-    [prompt, size, loadSubmissions],
+    [prompt, size, loadSubmissions, referenceImages],
   );
 
   const handleShareToggle = useCallback(

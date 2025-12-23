@@ -6,7 +6,7 @@
 
 import { Buffer } from 'node:buffer';
 import { prisma } from '@/lib/prisma';
-import { SubmissionStatus } from '@prisma/client';
+import { SubmissionStatus, ImageJob } from '@prisma/client';
 
 type CallOptions = {
   baseImageDataUrl?: string; // Legacy support or single image
@@ -14,12 +14,7 @@ type CallOptions = {
   size?: string;
 };
 
-type ImageGenerationJob = {
-  submissionId: string;
-  prompt: string;
-  options: CallOptions;
-  teacherId?: string; // Optional teacher ID for API key lookup
-};
+
 
 // Configuration for concurrent processing
 // Memory considerations:
@@ -107,7 +102,7 @@ class ImageGenerationQueue {
     }
   }
 
-  private async processJob(jobRecord: any) {
+  private async processJob(jobRecord: ImageJob) {
     try {
       const { submissionId, prompt, options: optionsStr, teacherId } = jobRecord;
       const options = JSON.parse(optionsStr) as CallOptions;
@@ -196,22 +191,23 @@ class ImageGenerationQueue {
         })
       ]);
 
-    } catch (error: any) {
-      console.error(`Job failed for submission ${jobRecord.submissionId}:`, error);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`Job failed for submission ${jobRecord.submissionId}:`, errorMessage);
 
       await prisma.$transaction([
         prisma.promptSubmission.update({
           where: { id: jobRecord.submissionId },
           data: {
             status: SubmissionStatus.ERROR,
-            errorMessage: error.message || 'Image generation failed',
+            errorMessage: errorMessage,
           },
         }),
         prisma.imageJob.update({
           where: { id: jobRecord.id },
           data: {
             status: 'FAILED',
-            error: error.message || 'Unknown error',
+            error: errorMessage,
             completedAt: new Date()
           }
         })

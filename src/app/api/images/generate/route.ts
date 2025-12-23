@@ -125,6 +125,7 @@ export async function POST(request: Request) {
         }
       }
     } else if (referenceImage) {
+      optimizedReferenceImages = [];
       // Legacy single image
       if (!referenceImage.startsWith('data:image/') || !isValidSize(referenceImage)) {
         return NextResponse.json({ message: 'Reference image is invalid or too large.' }, { status: 400 });
