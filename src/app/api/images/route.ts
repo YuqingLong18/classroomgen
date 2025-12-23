@@ -159,6 +159,17 @@ export async function GET(request: NextRequest) {
     const rootId = submission.rootSubmissionId ?? submission.id;
     const successCount = successCounts.get(rootId) ?? (submission.status === 'SUCCESS' ? 1 : 0);
     const remainingEdits = Math.max(0, maxEdits - successCount);
+
+    // Optimize Payload: Convert legacy base64 to render URL, keep file paths as is
+    let imageUrl = null;
+    if (submission.imageData) {
+      if (submission.imageData.startsWith('/api/uploads/')) {
+        imageUrl = submission.imageData;
+      } else {
+        imageUrl = `/api/images/${submission.id}/render`;
+      }
+    }
+
     return {
       ...submission,
       rootId,
@@ -168,6 +179,9 @@ export async function GET(request: NextRequest) {
       studentUsername: submission.student?.username ?? null,
       likeCount: submission._count.likes,
       likedByCurrentUser: likedSubmissionIds.has(submission.id),
+      // Send optimistic URL, drop heavy base64 data
+      imageUrl,
+      imageData: null,
       comments: submission.comments.map((comment) => ({
         id: comment.id,
         content: comment.content,

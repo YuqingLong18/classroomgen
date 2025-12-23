@@ -42,6 +42,7 @@ interface Submission {
   createdAt: string;
   status: 'PENDING' | 'SUCCESS' | 'ERROR';
   imageData: string | null;
+  imageUrl?: string | null;
   imageMimeType: string | null;
   revisionIndex: number;
   rootSubmissionId: string | null;
@@ -80,11 +81,11 @@ function toDisplayTime(iso: string) {
 }
 
 function downloadImage(submission: Submission) {
-  if (!submission.imageData) return;
+  if (!submission.imageUrl && !submission.imageData) return;
   const mimeType = submission.imageMimeType || 'image/png';
   const prefix = mimeType.split('/')[1] || 'png';
   const link = document.createElement('a');
-  link.href = `data:${mimeType};base64,${submission.imageData}`;
+  link.href = submission.imageUrl || `data:${mimeType};base64,${submission.imageData}`;
   const revisionLabel = submission.revisionIndex > 0 ? `-rev${submission.revisionIndex}` : '';
   link.download = `classroom-image-${submission.id}${revisionLabel}.${prefix}`;
   document.body.appendChild(link);
@@ -166,7 +167,7 @@ export default function StudentHome() {
       try {
         const res = await fetch('/api/session', { credentials: 'include' });
         if (!res.ok) {
-          await new Promise((resolve) => setTimeout(resolve, 250));
+          await new Promise((resolve) => setTimeout(resolve, 1000));
           continue;
         }
         const data: SessionResponse = await res.json();
@@ -178,7 +179,7 @@ export default function StudentHome() {
       } catch (error) {
         console.error('Failed to confirm session role', error);
       }
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
     return null;
   }, []);
@@ -285,7 +286,7 @@ export default function StudentHome() {
     // Only fetch page 1 (cursor=null)
     const interval = window.setInterval(() => {
       void loadSubmissions(null, true);
-    }, 2000);
+    }, 5000);
 
     return () => {
       window.clearInterval(interval);
@@ -966,17 +967,19 @@ export default function StudentHome() {
                                 <div className="animate-spin rounded-full h-8 w-8 border-2 border-[var(--color-accent)] border-t-transparent"></div>
                                 <span className="text-sm">Generating image...</span>
                               </div>
-                            ) : submission.imageData ? (
+                            ) : (submission.imageUrl || submission.imageData) ? (
                               <div
                                 className="relative aspect-[4/3] w-full cursor-pointer hover:opacity-95 transition"
-                                onClick={() => setSelectedImage({
-                                  src: `data:${submission.imageMimeType ?? 'image/png'};base64,${submission.imageData}`,
-                                  prompt: submission.prompt,
-                                  mimeType: submission.imageMimeType
-                                })}
+                                onClick={() => {
+                                  setSelectedImage({
+                                    src: submission.imageUrl || `data:${submission.imageMimeType ?? 'image/png'};base64,${submission.imageData}`,
+                                    prompt: submission.prompt,
+                                    mimeType: submission.imageMimeType
+                                  });
+                                }}
                               >
                                 <Image
-                                  src={`data:${submission.imageMimeType ?? 'image/png'};base64,${submission.imageData}`}
+                                  src={submission.imageUrl || `data:${submission.imageMimeType ?? 'image/png'};base64,${submission.imageData}`}
                                   alt={submission.prompt}
                                   fill
                                   sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
