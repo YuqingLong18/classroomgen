@@ -69,7 +69,6 @@ export async function POST(request: Request) {
         sessionId,
         parentSubmissionId,
       });
-      // Log warnings but allow the request - the sanitized prompt will be used
     }
 
     const studentStatus = await requireActiveStudent(sessionId, studentId);
@@ -84,24 +83,58 @@ export async function POST(request: Request) {
 
     let rootSubmissionId: string | null = null;
     let revisionIndex = 0;
-
     let baseImageDataUrl: string | undefined;
 
-    if (referenceImage) {
-      // User uploaded a reference image - treat as a fresh generation with guidance
-      // Basic validation for data URL
-      if (!referenceImage.startsWith('data:image/') || referenceImage.length > 5 * 1024 * 1024) { // 5MB limit check (rough)
-        return NextResponse.json({ message: 'Invalid or too large reference image.' }, { status: 400 });
-      }
-      baseImageDataUrl = referenceImage;
-    } else if (referenceImages && referenceImages.length > 0) {
-      // Validate all images
+    // Validate and Optimize Reference Images
+    let optimizedReferenceImages: string[] | undefined;
+
+    const isValidSize = (img: string) => img.length <= 5 * 1024 * 1024;
+
+    if (referenceImages && referenceImages.length > 0) {
+      optimizedReferenceImages = [];
+      const { saveImage } = await import('@/lib/storage');
+
       for (const img of referenceImages) {
-        if (!img.startsWith('data:image/') || img.length > 5 * 1024 * 1024) {
+        if (!img.startsWith('data:image/') || !isValidSize(img)) {
           return NextResponse.json({ message: 'One or more reference images are invalid or too large.' }, { status: 400 });
         }
+
+        try {
+          const matches = img.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+          if (matches && matches.length === 3) {
+            const mimeType = matches[1];
+            const buffer = Buffer.from(matches[2], 'base64');
+            const path = await saveImage(buffer, mimeType);
+            optimizedReferenceImages.push(path);
+          } else {
+            optimizedReferenceImages.push(img);
+          }
+        } catch (e) {
+          console.error('Failed to process reference image', e);
+          return NextResponse.json({ message: 'Failed to process reference images.' }, { status: 500 });
+        }
       }
-      // We will use referenceImages array directly
+    } else if (referenceImage) {
+      // Legacy single image
+      if (!referenceImage.startsWith('data:image/') || !isValidSize(referenceImage)) {
+        return NextResponse.json({ message: 'Reference image is invalid or too large.' }, { status: 400 });
+      }
+
+      const { saveImage } = await import('@/lib/storage');
+      try {
+        const matches = referenceImage.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        if (matches && matches.length === 3) {
+          const mimeType = matches[1];
+          const buffer = Buffer.from(matches[2], 'base64');
+          const path = await saveImage(buffer, mimeType);
+          optimizedReferenceImages = [path];
+        } else {
+          optimizedReferenceImages = [referenceImage];
+        }
+      } catch (e) {
+        console.error('Failed to process reference image', e);
+        return NextResponse.json({ message: 'Failed to process reference image.' }, { status: 500 });
+      }
     } else if (parentSubmissionId) {
       const parent = await prisma.promptSubmission.findUnique({
         where: { id: parentSubmissionId },
@@ -142,7 +175,23 @@ export async function POST(request: Request) {
 
       rootSubmissionId = rootId;
       revisionIndex = chainCount;
-      baseImageDataUrl = `data:${parent.imageMimeType ?? 'image/png'};base64,${parent.imageData}`;
+      if (parent.imageData && parent.imageData.startsWith('/api/uploads/')) {
+        try {
+          const fs = await import('fs/promises');
+          const path = await import('path');
+          const filename = parent.imageData.split('/').pop();
+          if (filename) {
+            const filepath = path.join(process.cwd(), 'uploads', filename);
+            const buffer = await fs.readFile(filepath);
+            baseImageDataUrl = `data:${parent.imageMimeType ?? 'image/png'};base64,${buffer.toString('base64')}`;
+          }
+        } catch (e) {
+          console.error('Failed to read parent image file', e);
+          return NextResponse.json({ message: 'Original image file is missing.' }, { status: 422 });
+        }
+      } else {
+        baseImageDataUrl = `data:${parent.imageMimeType ?? 'image/png'};base64,${parent.imageData}`;
+      }
     }
 
     const submission = await prisma.promptSubmission.create({
@@ -154,27 +203,23 @@ export async function POST(request: Request) {
         rootSubmissionId,
         parentSubmissionId: parentSubmissionId ?? null,
         revisionIndex,
-        status: SubmissionStatus.PENDING, // Explicitly set to PENDING
-        referenceImages: referenceImages ? JSON.stringify(referenceImages) : (referenceImage ? JSON.stringify([referenceImage]) : null),
+        status: SubmissionStatus.PENDING,
+        referenceImages: optimizedReferenceImages ? JSON.stringify(optimizedReferenceImages) : null,
       },
     });
 
-    // Enqueue the image generation job for background processing
-    // This returns immediately, allowing the request to complete quickly
     enqueueImageGeneration(submission.id, prompt, {
       baseImageDataUrl,
-      referenceImages: referenceImages || (referenceImage ? [referenceImage] : undefined),
+      referenceImages: optimizedReferenceImages,
       size
     }, session.teacherId);
 
-    // Return the submission immediately with PENDING status
-    // The client will poll for updates
     return NextResponse.json({
       submission: {
         id: submission.id,
         prompt: submission.prompt,
         createdAt: submission.createdAt,
-        imageData: null,
+        imageData: null, // Client waits for update
         imageMimeType: null,
         revisionIndex: submission.revisionIndex,
         parentSubmissionId: submission.parentSubmissionId,
@@ -183,6 +228,7 @@ export async function POST(request: Request) {
         status: SubmissionStatus.PENDING,
       },
     });
+
   } catch (error) {
     console.error('Image generation failed', error);
     if (error instanceof z.ZodError) {

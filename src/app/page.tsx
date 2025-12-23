@@ -183,22 +183,70 @@ export default function StudentHome() {
     return null;
   }, []);
 
-  const loadSubmissions = useCallback(async () => {
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  const loadSubmissions = useCallback(async (cursor: string | null = null, isPoll = false) => {
     if (!session?.id) return;
-    setFetchingSubmissions(true);
+    if (cursor) setIsLoadingMore(true);
+    else if (!isPoll) setFetchingSubmissions(true);
+
     setShareError(null);
     setSocialError(null);
     try {
-      const res = await fetch('/api/images', { credentials: 'include' });
+      const url = new URL('/api/images', window.location.href);
+      if (cursor) url.searchParams.set('cursor', cursor);
+      url.searchParams.set('limit', '50');
+
+      const res = await fetch(url.toString(), { credentials: 'include' });
       if (!res.ok) return;
-      const data: FetchSubmissionsResponse = await res.json();
-      setSubmissions(data.submissions ?? []);
-      setCommentDrafts({});
-      setCommentErrors({});
+      const data: any = await res.json(); // Use any to avoid type errors with new fields
+
+      const newSubmissions = data.submissions ?? [];
+      setNextCursor(data.nextCursor ?? null);
+
+      if (cursor) {
+        // Appending (Load More)
+        setSubmissions(prev => {
+          // Filter out duplicates just in case
+          const existingIds = new Set(prev.map(s => s.id));
+          const uniqueNew = newSubmissions.filter((s: any) => !existingIds.has(s.id));
+          return [...prev, ...uniqueNew];
+        });
+      } else {
+        // First page load (or poll)
+        if (isPoll) {
+          // Smart merge for polling
+          setSubmissions(prev => {
+            const updatedMap = new Map(newSubmissions.map((s: any) => [s.id, s]));
+            const merged = prev.map(s => {
+              if (updatedMap.has(s.id)) {
+                return updatedMap.get(s.id);
+              }
+              return s;
+            });
+
+            // Prepend completely new items (top of list)
+            // Note: This logic assumes new items are always at the top.
+            // Check for items in newSubmissions that are NOT in prev
+            const prevIds = new Set(prev.map(s => s.id));
+            const brandNew = newSubmissions.filter((s: any) => !prevIds.has(s.id));
+
+            return [...brandNew, ...merged];
+          });
+        } else {
+          // Hard refresh (Initial load)
+          setSubmissions(newSubmissions);
+          setCommentDrafts({});
+          setCommentErrors({});
+        }
+      }
+
     } catch (error) {
       console.error('Failed to load submissions', error);
     } finally {
       setFetchingSubmissions(false);
+      setIsLoadingMore(false);
     }
   }, [session?.id]);
 
@@ -218,7 +266,7 @@ export default function StudentHome() {
 
   useEffect(() => {
     if (session?.id && session.role === 'student') {
-      void loadSubmissions();
+      void loadSubmissions(null, false);
     }
   }, [session?.id, session?.role, loadSubmissions]);
 
@@ -234,8 +282,9 @@ export default function StudentHome() {
     if (!hasPendingSubmissions) return;
 
     // Poll every 2 seconds for pending submissions
+    // Only fetch page 1 (cursor=null)
     const interval = window.setInterval(() => {
-      void loadSubmissions();
+      void loadSubmissions(null, true);
     }, 2000);
 
     return () => {

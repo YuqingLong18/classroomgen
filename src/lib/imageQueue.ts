@@ -27,98 +27,192 @@ type ImageGenerationJob = {
 // - HTTP request/response buffers add ~1-2MB per job
 // - With 20 concurrent jobs: ~40-120MB peak memory usage
 // - Memory is freed immediately after each job completes
-const MAX_CONCURRENT_JOBS = 20; // Process up to 20 images simultaneously
-const POLL_INTERVAL_MS = 1000; // Check for new jobs every second
+const MAX_CONCURRENT_JOBS = 20;
+const POLL_INTERVAL_MS = 1000;
 
 class ImageGenerationQueue {
-  private queue: ImageGenerationJob[] = [];
-  private processing = new Set<string>(); // Track submission IDs being processed
   private activeJobs = 0;
   private isRunning = false;
 
   /**
-   * Add a job to the queue
+   * Add a job to the queue (persisted in DB)
    */
-  enqueue(job: ImageGenerationJob) {
-    this.queue.push(job);
+  async enqueue(
+    submissionId: string,
+    prompt: string,
+    options: CallOptions,
+    teacherId?: string
+  ) {
+    // Create job record in DB
+    await prisma.imageJob.create({
+      data: {
+        submissionId,
+        prompt,
+        options: JSON.stringify(options),
+        teacherId,
+        status: 'PENDING'
+      }
+    });
+
     if (!this.isRunning) {
       this.start();
     }
   }
 
-  /**
-   * Start processing the queue
-   */
   private start() {
     if (this.isRunning) return;
     this.isRunning = true;
     this.processQueue();
   }
 
-  /**
-   * Process the queue with concurrency control
-   */
   private async processQueue() {
-    while (this.queue.length > 0 || this.activeJobs > 0) {
-      // Start as many jobs as we can up to the concurrency limit
-      while (this.queue.length > 0 && this.activeJobs < MAX_CONCURRENT_JOBS) {
-        const job = this.queue.shift();
-        if (job && !this.processing.has(job.submissionId)) {
-          this.activeJobs++;
-          this.processing.add(job.submissionId);
-          // Process job asynchronously without blocking
-          this.processJob(job).catch((error) => {
-            console.error(`Error processing job ${job.submissionId}:`, error);
+    console.log('[Queue] Worker started');
+    while (this.isRunning) {
+      try {
+        if (this.activeJobs < MAX_CONCURRENT_JOBS) {
+          // Find the oldest PENDING job
+          // Note: In a multi-server setup, this needs a transaction/lock.
+          // For this single-server deployment, this is acceptable.
+          const job = await prisma.imageJob.findFirst({
+            where: { status: 'PENDING' },
+            orderBy: { createdAt: 'asc' },
           });
+
+          if (job) {
+            // Lock the job
+            const updated = await prisma.imageJob.update({
+              where: { id: job.id, status: 'PENDING' },
+              data: { status: 'PROCESSING', startedAt: new Date() }
+            }).catch(() => null); // Catch race condition if another worker took it
+
+            if (updated) {
+              this.activeJobs++;
+              this.processJob(updated).catch(err => console.error(err));
+            }
+          } else {
+            // No jobs found, wait
+            await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+
+            // If no active jobs for a while, we could stop the loop,
+            // but for simplicity we keep polling.
+          }
+        } else {
+          // Max concurrency reached, wait
+          await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
         }
+      } catch (error) {
+        console.error('[Queue] Error in worker loop:', error);
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
       }
-
-      // Wait a bit before checking again
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
     }
-
-    this.isRunning = false;
   }
 
-  /**
-   * Process a single image generation job
-   */
-  private async processJob(job: ImageGenerationJob) {
+  private async processJob(jobRecord: any) {
     try {
-      // Get teacher API key if teacherId is provided
-      let teacherApiKey: string | null = null;
-      if (job.teacherId) {
-        const { getTeacherApiKey } = await import('@/lib/teacherApiKey');
-        teacherApiKey = await getTeacherApiKey(job.teacherId);
+      const { submissionId, prompt, options: optionsStr, teacherId } = jobRecord;
+      const options = JSON.parse(optionsStr) as CallOptions;
+
+      // Hydrate reference images if they are paths (for external AI APIs)
+      if (options.referenceImages && options.referenceImages.length > 0) {
+        const fs = await import('fs/promises');
+        const path = await import('path');
+
+        const hydratedImages = await Promise.all(options.referenceImages.map(async (img) => {
+          if (img.startsWith('/api/uploads/')) {
+            try {
+              const filename = img.split('/').pop();
+              if (filename) {
+                const filepath = path.join(process.cwd(), 'uploads', filename);
+                const buffer = await fs.readFile(filepath);
+                // Default to png if unknown, most uploads are likely png/jpeg
+                return `data:image/png;base64,${buffer.toString('base64')}`;
+              }
+            } catch (e) {
+              console.error(`[Queue] Failed to hydrate reference image ${img}`, e);
+              return img; // Return original path which will likely fail API validation, but better than crashing
+            }
+          }
+          return img;
+        }));
+        options.referenceImages = hydratedImages;
       }
 
-      const { imageData, mimeType } = await callImageGeneration(job.prompt, job.options, teacherApiKey);
+      // Get teacher API key if teacherId is provided
+      let teacherApiKey: string | null = null;
+      if (teacherId) {
+        const { getTeacherApiKey } = await import('@/lib/teacherApiKey');
+        teacherApiKey = await getTeacherApiKey(teacherId);
+      }
 
-      await prisma.promptSubmission.update({
-        where: { id: job.submissionId },
-        data: {
-          status: SubmissionStatus.SUCCESS,
-          imageData,
-          imageMimeType: mimeType,
-        },
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Image generation failed';
-      console.error(`Image generation failed for submission ${job.submissionId}:`, error);
+      const { imageData, mimeType } = await callImageGeneration(prompt, options, teacherApiKey);
 
-      await prisma.promptSubmission.update({
-        where: { id: job.submissionId },
-        data: {
-          status: SubmissionStatus.ERROR,
-          errorMessage: message,
-        },
-      });
+      // Save to disk
+      let finalImageData = imageData;
+      const { saveImage } = await import('@/lib/storage');
+      try {
+        const buffer = Buffer.from(imageData, 'base64');
+        finalImageData = await saveImage(buffer, mimeType);
+      } catch (err) {
+        console.error(`Failed to save image to disk for ${submissionId}:`, err);
+      }
+
+      // Update Submission & Job
+      await prisma.$transaction([
+        prisma.promptSubmission.update({
+          where: { id: submissionId },
+          data: {
+            status: SubmissionStatus.SUCCESS,
+            imageData: finalImageData,
+            imageMimeType: mimeType,
+          },
+        }),
+        prisma.imageJob.update({
+          where: { id: jobRecord.id },
+          data: {
+            status: 'COMPLETED',
+            completedAt: new Date()
+          }
+        })
+      ]);
+
+    } catch (error: any) {
+      console.error(`Job failed for submission ${jobRecord.submissionId}:`, error);
+
+      await prisma.$transaction([
+        prisma.promptSubmission.update({
+          where: { id: jobRecord.submissionId },
+          data: {
+            status: SubmissionStatus.ERROR,
+            errorMessage: error.message || 'Image generation failed',
+          },
+        }),
+        prisma.imageJob.update({
+          where: { id: jobRecord.id },
+          data: {
+            status: 'FAILED',
+            error: error.message || 'Unknown error',
+            completedAt: new Date()
+          }
+        })
+      ]);
     } finally {
-      this.processing.delete(job.submissionId);
       this.activeJobs--;
     }
   }
 }
+
+// Export singleton
+export const imageQueue = new ImageGenerationQueue();
+
+// Helper for external API to add jobs
+export const enqueueImageGeneration = (
+  submissionId: string,
+  prompt: string,
+  options: CallOptions,
+  teacherId?: string
+) => {
+  return imageQueue.enqueue(submissionId, prompt, options, teacherId);
+};
 
 // Import the callVolcengine function from the generate route
 // We'll need to extract it to a shared module
@@ -306,13 +400,3 @@ async function fetchImageAsBase64(urlOrDataUrl: string) {
   const mimeType = response.headers.get('content-type') ?? 'image/png';
   return { imageData: buffer, mimeType };
 }
-
-
-
-// Singleton instance
-const imageQueue = new ImageGenerationQueue();
-
-export function enqueueImageGeneration(submissionId: string, prompt: string, options: CallOptions = {}, teacherId?: string) {
-  imageQueue.enqueue({ submissionId, prompt, options, teacherId });
-}
-
