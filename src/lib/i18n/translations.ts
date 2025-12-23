@@ -85,6 +85,9 @@ export const translations = {
             pressEnter: 'Press Enter to send. Shift + Enter for a new line.',
             chatDisabledTitle: 'Chat assistant is currently turned off',
             chatDisabledDesc: 'Your teacher has paused the AI chat helper for now. You can still explore the image lab while you wait.',
+            dropReferenceImages: 'Drop reference images here',
+            orClickToUpload: 'or click to upload',
+            imagesTooLarge: 'Images must be smaller than 5MB',
         },
         teacher: {
             dashboardTitle: 'Teacher Dashboard',
@@ -229,6 +232,9 @@ export const translations = {
             pressEnter: '按 Enter 发送。Shift + Enter 换行。',
             chatDisabledTitle: '聊天助手当前已关闭',
             chatDisabledDesc: '你的老师暂时暂停了AI聊天助手。你可以在等待时探索图像实验室。',
+            dropReferenceImages: '将参考图片拖到此处',
+            orClickToUpload: '或点击上传',
+            imagesTooLarge: '图片必须小于 5MB',
         },
         teacher: {
             dashboardTitle: '教师面板',

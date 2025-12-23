@@ -739,7 +739,7 @@ export default function StudentHome() {
                       return;
                     }
                     if (file.size > 5 * 1024 * 1024) {
-                      error = 'Images must be smaller than 5MB';
+                      error = t.student.imagesTooLarge;
                       processed++;
                       if (processed === files.length && error) setGenerateError(error);
                       return;
@@ -778,7 +778,7 @@ export default function StudentHome() {
                     let processed = 0;
                     files.forEach(file => {
                       if (file.size > 5 * 1024 * 1024) {
-                        error = 'Images must be smaller than 5MB';
+                        error = t.student.imagesTooLarge;
                         processed++;
                         if (processed === files.length && error) setGenerateError(error);
                         return;
@@ -806,8 +806,8 @@ export default function StudentHome() {
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--color-muted-foreground)]"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" x2="12" y1="3" y2="15" /></svg>
               </div>
               <div className="text-center">
-                <p className="text-sm font-medium text-[var(--color-foreground)]">Drag & drop reference images</p>
-                <p className="text-xs text-[var(--color-muted-foreground)] mt-1">or click to browse</p>
+                <p className="text-sm font-medium text-[var(--color-foreground)]">{t.student.dropReferenceImages}</p>
+                <p className="text-xs text-[var(--color-muted-foreground)] mt-1">{t.student.orClickToUpload}</p>
               </div>
             </div>
 
