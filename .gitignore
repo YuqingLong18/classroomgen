@@ -51,4 +51,8 @@ node_modules
 npm-debug.log
 
 # Ignore Prisma development database
-prisma/prisma/dev.dbuploads/
+# Ignore Prisma development database
+/prisma/dev.db
+/prisma/dev.db-journal
+*.db
+
