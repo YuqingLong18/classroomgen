@@ -1309,7 +1309,7 @@ export default function TeacherDashboard() {
                                       </div>
                                     );
                                   }
-                                } catch (e) { return null; }
+                                } catch { return null; }
                               })()}
 
                               {/* Image Preview or Status */}

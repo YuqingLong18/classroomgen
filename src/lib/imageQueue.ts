@@ -329,7 +329,7 @@ async function callImageGeneration(prompt: string, options: CallOptions = {}, te
           'X-Title': 'ClassroomGen',
         },
         body: JSON.stringify(body),
-        // @ts-ignore - node-fetch agent support
+        // @ts-expect-error - node-fetch agent support
         agent,
       });
 
@@ -429,7 +429,7 @@ async function callImageGeneration(prompt: string, options: CallOptions = {}, te
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      // @ts-ignore
+      // @ts-expect-error - node-fetch agent support
       agent,
     });
 
@@ -453,7 +453,7 @@ async function callImageGeneration(prompt: string, options: CallOptions = {}, te
   }
 }
 
-async function fetchImageAsBase64(urlOrDataUrl: string, agent?: any) {
+async function fetchImageAsBase64(urlOrDataUrl: string, agent?: unknown) {
   if (urlOrDataUrl.startsWith('data:')) {
     const [, meta, data] = urlOrDataUrl.match(/^data:([^;,]+)?(?:;base64)?,(.+)$/) ?? [];
     if (!data) {
@@ -466,7 +466,7 @@ async function fetchImageAsBase64(urlOrDataUrl: string, agent?: any) {
 
   console.log(`[Queue] Downloading image from ${urlOrDataUrl.substring(0, 50)}...`);
   const response = await fetch(urlOrDataUrl, {
-    // @ts-ignore
+    // @ts-expect-error - node-fetch agent support
     agent
   });
   if (!response.ok) {

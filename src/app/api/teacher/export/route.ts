@@ -21,7 +21,7 @@ const resolveImageBuffer = async (data: string | null): Promise<Buffer | null> =
     }
     const b64 = data.replace(/^data:image\/\w+;base64,/, '');
     return Buffer.from(b64, 'base64');
-  } catch (e) {
+  } catch {
     return null;
   }
 };
@@ -269,7 +269,7 @@ export async function GET() {
                     try {
                       const parsed = JSON.parse(submission.referenceImages);
                       if (Array.isArray(parsed)) refImages = parsed;
-                    } catch (e) { /* ignore */ }
+                    } catch { /* ignore */ }
                   }
 
                   if (refImages.length > 0) {
@@ -287,7 +287,7 @@ export async function GET() {
                           doc.image(buf, refX, refY, { fit: [80, 80] });
                           refX += 90;
                           if (80 > maxHeight) maxHeight = 80;
-                        } catch (e) { }
+                        } catch { }
                       }
                     }
                     if (maxHeight > 0) doc.y = refY + maxHeight + 5;
@@ -311,7 +311,7 @@ export async function GET() {
                         const imgX = doc.page.margins.left + contentIndent;
                         doc.image(buf, imgX, doc.y, { fit: [200, 200] });
                         doc.y += 210;
-                      } catch (e) {
+                      } catch {
                         doc.text('[Image Error]', { indent: contentIndent });
                       }
                     } else {

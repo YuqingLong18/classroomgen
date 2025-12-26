@@ -185,8 +185,8 @@ export default function StudentHome() {
     return null;
   }, []);
 
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [, setNextCursor] = useState<string | null>(null);
+  const [, setIsLoadingMore] = useState(false);
 
   const loadSubmissions = useCallback(async (cursor: string | null = null, isPoll = false) => {
     if (!session?.id) return;

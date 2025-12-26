@@ -20,7 +20,7 @@ export async function POST(request: Request) {
 
     // Verify credentials
     let externalUsername: string | null = null;
-    let authServiceAvailable = true;
+    // let authServiceAvailable = true;
 
     // 1. Try External Authentication
     try {
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       }
     } catch (maxError) {
       console.warn('Authentication service unavailable, trying local auth.', maxError);
-      authServiceAvailable = false;
+      // authServiceAvailable = false;
     }
 
     // 2. Local fallback if external failed
