@@ -17,17 +17,17 @@ type CallOptions = {
 
 
 // Configuration for concurrent processing
-// Memory considerations:
-// - Each concurrent job processes ~1-4MB base64 image data temporarily
-// - HTTP request/response buffers add ~1-2MB per job
-// - With 20 concurrent jobs: ~40-120MB peak memory usage
-// - Memory is freed immediately after each job completes
 const MAX_CONCURRENT_JOBS = 20;
 const POLL_INTERVAL_MS = 1000;
 
 class ImageGenerationQueue {
   private activeJobs = 0;
   private isRunning = false;
+  private loopId = Math.random().toString(36).substring(7);
+
+  constructor() {
+    console.log(`[Queue] Initialized new ImageGenerationQueue instance ${this.loopId}`);
+  }
 
   /**
    * Add a job to the queue (persisted in DB)
@@ -38,6 +38,7 @@ class ImageGenerationQueue {
     options: CallOptions,
     teacherId?: string
   ) {
+    console.log(`[Queue ${this.loopId}] Enqueuing submission ${submissionId}`);
     // Create job record in DB
     await prisma.imageJob.create({
       data: {
@@ -50,56 +51,63 @@ class ImageGenerationQueue {
     });
 
     if (!this.isRunning) {
+      console.log(`[Queue ${this.loopId}] Queue not running, starting...`);
       this.start();
     }
   }
 
-  private start() {
-    if (this.isRunning) return;
+  start() {
+    if (this.isRunning) {
+      console.log(`[Queue ${this.loopId}] Already running`);
+      return;
+    }
     this.isRunning = true;
     this.processQueue();
   }
 
   private async processQueue() {
-    console.log('[Queue] Worker started');
+    console.log(`[Queue ${this.loopId}] Worker loop started`);
+    let noJobCount = 0;
+
     while (this.isRunning) {
       try {
         if (this.activeJobs < MAX_CONCURRENT_JOBS) {
-          // Find the oldest PENDING job
-          // Note: In a multi-server setup, this needs a transaction/lock.
-          // For this single-server deployment, this is acceptable.
           const job = await prisma.imageJob.findFirst({
             where: { status: 'PENDING' },
             orderBy: { createdAt: 'asc' },
           });
 
           if (job) {
+            noJobCount = 0;
             // Lock the job
             const updated = await prisma.imageJob.update({
               where: { id: job.id, status: 'PENDING' },
               data: { status: 'PROCESSING', startedAt: new Date() }
-            }).catch(() => null); // Catch race condition if another worker took it
+            }).catch(() => null);
 
             if (updated) {
               this.activeJobs++;
-              this.processJob(updated).catch(err => console.error(err));
+              console.log(`[Queue ${this.loopId}] Processing job ${updated.id} for submission ${updated.submissionId}`);
+              this.processJob(updated).catch(err => console.error(`[Queue ${this.loopId}] Uncaught error processing job ${updated.id}:`, err));
             }
           } else {
             // No jobs found, wait
+            noJobCount++;
+            if (noJobCount % 10 === 0) { // Log every 10 polls (~10s)
+              console.log(`[Queue ${this.loopId}] Waiting for jobs... (active: ${this.activeJobs})`);
+            }
             await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-
-            // If no active jobs for a while, we could stop the loop,
-            // but for simplicity we keep polling.
           }
         } else {
-          // Max concurrency reached, wait
+          console.log(`[Queue ${this.loopId}] Max concurrency reached (${this.activeJobs})`);
           await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
         }
       } catch (error) {
-        console.error('[Queue] Error in worker loop:', error);
+        console.error(`[Queue ${this.loopId}] Error in worker loop:`, error);
         await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
       }
     }
+    console.log(`[Queue ${this.loopId}] Worker loop stopped`);
   }
 
   private async processJob(jobRecord: ImageJob) {
@@ -123,7 +131,7 @@ class ImageGenerationQueue {
                 return `data:image/png;base64,${buffer.toString('base64')}`;
               }
             } catch (e) {
-              console.error(`[Queue] Failed to hydrate reference image ${img}`, e);
+              console.error(`[Queue ${this.loopId}] Failed to hydrate reference image ${img}`, e);
               return img; // Return original path which will likely fail API validation, but better than crashing
             }
           }
@@ -139,7 +147,9 @@ class ImageGenerationQueue {
         teacherApiKey = await getTeacherApiKey(teacherId);
       }
 
+      console.log(`[Queue ${this.loopId}] Calling image generation API for job ${jobRecord.id}`);
       const { imageData, mimeType } = await callImageGeneration(prompt, options, teacherApiKey);
+      console.log(`[Queue ${this.loopId}] API success for job ${jobRecord.id}`);
 
       // Fetch metadata for file organization
       const submissionInfo = await prisma.promptSubmission.findUnique({
@@ -169,7 +179,7 @@ class ImageGenerationQueue {
         const buffer = Buffer.from(imageData, 'base64');
         finalImageData = await saveImage(buffer, mimeType, subDir);
       } catch (err) {
-        console.error(`Failed to save image to disk for ${submissionId}:`, err);
+        console.error(`[Queue ${this.loopId}] Failed to save image to disk for ${submissionId}:`, err);
       }
 
       // Update Submission & Job
@@ -190,10 +200,11 @@ class ImageGenerationQueue {
           }
         })
       ]);
+      console.log(`[Queue ${this.loopId}] Job ${jobRecord.id} completed successfully`);
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error(`Job failed for submission ${jobRecord.submissionId}:`, errorMessage);
+      console.error(`[Queue ${this.loopId}] Job failed for submission ${jobRecord.submissionId}:`, errorMessage);
 
       await prisma.$transaction([
         prisma.promptSubmission.update({
@@ -218,8 +229,22 @@ class ImageGenerationQueue {
   }
 }
 
-// Export singleton
-export const imageQueue = new ImageGenerationQueue();
+// Global Singleton Pattern for Next.js HMR
+const globalForQueue = globalThis as unknown as {
+  imageQueue: ImageGenerationQueue | undefined;
+};
+
+export const imageQueue = globalForQueue.imageQueue ?? new ImageGenerationQueue();
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForQueue.imageQueue = imageQueue;
+}
+
+// Ensure the queue is running if it was already instantiated
+// This might trigger on HMR re-eval, ensuring the loop restarts if it was stopped (though we don't explicitly stop it)
+// Ideally, the old instance stays alive in memory. Using the singleton ensures we use the SAME instance.
+// So this line ensures that if we access it, we verify it's running.
+imageQueue.start();
 
 // Helper for external API to add jobs
 export const enqueueImageGeneration = (
@@ -231,11 +256,23 @@ export const enqueueImageGeneration = (
   return imageQueue.enqueue(submissionId, prompt, options, teacherId);
 };
 
+// Helper for creating fetch agent with proxy support
+async function getFetchAgent() {
+  const { HttpsProxyAgent } = await import('https-proxy-agent');
+  const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.https_proxy || process.env.http_proxy;
+  if (proxy) {
+    console.log(`[Queue] Using proxy: ${proxy}`);
+    return new HttpsProxyAgent(proxy);
+  }
+  return undefined;
+}
+
 // Import the callVolcengine function from the generate route
 // We'll need to extract it to a shared module
 // Shared function for image generation
 async function callImageGeneration(prompt: string, options: CallOptions = {}, teacherApiKey: string | null = null) {
   const openRouterKey = process.env.OPENROUTER_API_KEY;
+  const agent = await getFetchAgent();
 
   if (openRouterKey) {
     // OpenRouter Implementation
@@ -281,68 +318,78 @@ async function callImageGeneration(prompt: string, options: CallOptions = {}, te
       body.image_config = { aspect_ratio: aspectRatio };
     }
 
-    const response = await fetch(CHAT_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${openRouterKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://classroomgen.vercel.app',
-        'X-Title': 'ClassroomGen',
-      },
-      body: JSON.stringify(body),
-    });
+    console.log(`[Queue] Sending request to OpenRouter (Model: ${model})...`);
+    try {
+      const response = await fetch(CHAT_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${openRouterKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://classroomgen.vercel.app',
+          'X-Title': 'ClassroomGen',
+        },
+        body: JSON.stringify(body),
+        // @ts-ignore - node-fetch agent support
+        agent,
+      });
 
-    const result = await response.json();
-
-    if (!response.ok) {
-      console.error('OpenRouter image generation error', result);
-      const message = result?.error?.message ?? 'OpenRouter request failed';
-      throw new Error(message);
-    }
-
-    // Attempt to extract image URL from content or specific fields
-    const choice = result?.choices?.[0]?.message;
-    let imageUrl = null;
-
-    // Check for images array (Gemini/OpenRouter specific structure)
-    if (choice?.images && Array.isArray(choice.images) && choice.images.length > 0) {
-      const firstImage = choice.images[0];
-      if (firstImage?.image_url?.url) {
-        imageUrl = firstImage.image_url.url;
+      if (!response.ok) {
+        const result = await response.json();
+        console.error('OpenRouter image generation error', result);
+        const message = result?.error?.message ?? `OpenRouter request failed: ${response.status} ${response.statusText}`;
+        throw new Error(message);
       }
-    }
 
-    if (!imageUrl && choice?.content) {
-      const content = choice.content.trim();
-      // Check for markdown image syntax: ![alt](url)
-      const match = content.match(/\!\[.*?\]\((.*?)\)/);
-      if (match && match[1]) {
-        imageUrl = match[1];
-      } else {
-        // Check if content itself is a URL or data URL
-        if (content.startsWith('http') || content.startsWith('data:')) {
-          imageUrl = content;
-        } else if (content.length > 100) {
-          // Assume raw base64 if it's a long string
-          // Strip all whitespace (newlines, spaces) just in case
-          const base64Data = content.replace(/\s/g, '');
-          imageUrl = `data:image/png;base64,${base64Data}`;
+      const result = await response.json();
+
+      // Attempt to extract image URL from content or specific fields
+      const choice = result?.choices?.[0]?.message;
+      let imageUrl = null;
+
+      // Check for images array (Gemini/OpenRouter specific structure)
+      if (choice?.images && Array.isArray(choice.images) && choice.images.length > 0) {
+        const firstImage = choice.images[0];
+        if (firstImage?.image_url?.url) {
+          imageUrl = firstImage.image_url.url;
         }
       }
-    }
 
-    if (!imageUrl) {
-      // Fallback: Check if there's an 'image' field in the response (non-standard but possible)
-      if (result.image) imageUrl = result.image;
-      if (result.data?.[0]?.url) imageUrl = result.data[0].url;
-    }
+      if (!imageUrl && choice?.content) {
+        const content = choice.content.trim();
+        // Check for markdown image syntax: ![alt](url)
+        const match = content.match(/\!\[.*?\]\((.*?)\)/);
+        if (match && match[1]) {
+          imageUrl = match[1];
+        } else {
+          // Check if content itself is a URL or data URL
+          if (content.startsWith('http') || content.startsWith('data:')) {
+            imageUrl = content;
+          } else if (content.length > 100) {
+            // Assume raw base64 if it's a long string
+            // Strip all whitespace (newlines, spaces) just in case
+            const base64Data = content.replace(/\s/g, '');
+            imageUrl = `data:image/png;base64,${base64Data}`;
+          }
+        }
+      }
 
-    if (!imageUrl) {
-      console.error('OpenRouter response structure:', JSON.stringify(result, null, 2));
-      throw new Error('Could not extract image URL from OpenRouter response');
-    }
+      if (!imageUrl) {
+        // Fallback: Check if there's an 'image' field in the response (non-standard but possible)
+        if (result.image) imageUrl = result.image;
+        if (result.data?.[0]?.url) imageUrl = result.data[0].url;
+      }
 
-    return fetchImageAsBase64(imageUrl);
+      if (!imageUrl) {
+        console.error('OpenRouter response structure:', JSON.stringify(result, null, 2));
+        throw new Error('Could not extract image URL from OpenRouter response');
+      }
+
+      return fetchImageAsBase64(imageUrl, agent);
+
+    } catch (e) {
+      console.error('[OpenRouter Fetch Error]', e);
+      throw e;
+    }
   }
 
   // Volcengine Implementation (Fallback)
@@ -376,29 +423,37 @@ async function callImageGeneration(prompt: string, options: CallOptions = {}, te
     body.image = options.baseImageDataUrl;
   }
 
-  const response = await fetch(IMAGE_ENDPOINT, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  });
+  console.log(`[Queue] Sending request to Volcengine (Model: ${model})...`);
+  try {
+    const response = await fetch(IMAGE_ENDPOINT, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      // @ts-ignore
+      agent,
+    });
 
-  const result = await response.json();
+    if (!response.ok) {
+      const result = await response.json();
+      console.error('Volcengine image error', result);
+      const message = result?.error?.message ?? `Volcengine request failed: ${response.status}`;
+      throw new Error(message);
+    }
 
-  if (!response.ok) {
-    console.error('Volcengine image error', result);
-    const message = result?.error?.message ?? 'Volcengine request failed';
-    throw new Error(message);
+    const result = await response.json();
+    const imageUrl = result?.data?.[0]?.url;
+    if (!imageUrl) {
+      throw new Error('Volcengine did not return an image URL');
+    }
+
+    return fetchImageAsBase64(imageUrl, agent);
+  } catch (e) {
+    console.error('[Volcengine Fetch Error]', e);
+    throw e;
   }
-
-  const imageUrl = result?.data?.[0]?.url;
-  if (!imageUrl) {
-    throw new Error('Volcengine did not return an image URL');
-  }
-
-  return fetchImageAsBase64(imageUrl);
 }
 
-async function fetchImageAsBase64(urlOrDataUrl: string) {
+async function fetchImageAsBase64(urlOrDataUrl: string, agent?: any) {
   if (urlOrDataUrl.startsWith('data:')) {
     const [, meta, data] = urlOrDataUrl.match(/^data:([^;,]+)?(?:;base64)?,(.+)$/) ?? [];
     if (!data) {
@@ -409,7 +464,11 @@ async function fetchImageAsBase64(urlOrDataUrl: string) {
     return { imageData, mimeType };
   }
 
-  const response = await fetch(urlOrDataUrl);
+  console.log(`[Queue] Downloading image from ${urlOrDataUrl.substring(0, 50)}...`);
+  const response = await fetch(urlOrDataUrl, {
+    // @ts-ignore
+    agent
+  });
   if (!response.ok) {
     throw new Error('Failed to download image from Volcengine response');
   }
