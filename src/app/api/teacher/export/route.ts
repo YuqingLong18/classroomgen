@@ -4,17 +4,18 @@ import { verifyTeacherAccess } from '@/lib/session';
 import PDFDocument from 'pdfkit';
 import { Buffer } from 'node:buffer';
 import path from 'path';
-import fs from 'fs';
+import fs from 'fs/promises';
+import { existsSync } from 'fs';
 
-const resolveImageBuffer = (data: string | null): Buffer | null => {
+const resolveImageBuffer = async (data: string | null): Promise<Buffer | null> => {
   if (!data) return null;
   try {
     if (data.startsWith('/api/uploads/')) {
       const relativePath = data.split('/api/uploads/')[1];
       if (!relativePath) return null;
       const filePath = path.join(process.cwd(), 'uploads', ...relativePath.split('/'));
-      if (fs.existsSync(filePath)) {
-        return fs.readFileSync(filePath);
+      if (existsSync(filePath)) {
+        return await fs.readFile(filePath);
       }
       return null;
     }
@@ -152,214 +153,216 @@ export async function GET() {
       ...chatsByStudent.keys(),
     ]);
 
-    // Create PDF with promise-based buffer collection
-    const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
-      const doc = new PDFDocument({
-        margin: 50,
-        size: 'LETTER',
-        info: {
-          Title: `Classroom Session Report - ${session.classroomCode}`,
-          Author: 'ClassroomGen',
-          Subject: 'Session Export',
-        },
-      });
+    const stream = new ReadableStream({
+      async start(controller) {
+        const doc = new PDFDocument({
+          margin: 50,
+          size: 'LETTER',
+          info: {
+            Title: `Classroom Session Report - ${session.classroomCode}`,
+            Author: 'ClassroomGen',
+            Subject: 'Session Export',
+          },
+        });
 
-      // Register Chinese font
-      const fontPath = path.join(process.cwd(), 'public/fonts/NotoSansSC-Regular.woff');
-      doc.registerFont('NotoSansSC', fontPath);
-      doc.font('NotoSansSC');
+        // Register Chinese font
+        const fontPath = path.join(process.cwd(), 'public/fonts/NotoSansSC-Regular.woff');
+        doc.registerFont('NotoSansSC', fontPath);
+        doc.font('NotoSansSC');
 
-      const chunks: Buffer[] = [];
-      doc.on('data', (chunk) => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
+        doc.on('data', (chunk) => controller.enqueue(chunk));
+        doc.on('end', () => controller.close());
+        doc.on('error', (err) => controller.error(err));
 
-      // Header
-      doc.fontSize(20).fillColor('#6B46C1').text('Classroom Session Report', { align: 'center' });
-      doc.moveDown();
-      doc.fontSize(12).fillColor('#000000');
-      doc.text(`Classroom Code: ${session.classroomCode}`, { align: 'center' });
-      doc.text(`Session Started: ${formatDate(session.createdAt)}`, { align: 'center' });
-      if (session.endedAt) {
-        doc.text(`Session Ended: ${formatDate(session.endedAt)}`, { align: 'center' });
-      }
-      doc.moveDown(2);
-
-      // Process each student
-      const sortedStudentIds = Array.from(allStudentIds).sort();
-
-      for (const studentId of sortedStudentIds) {
-        const studentSubmissions = submissionsByStudent.get(studentId) || [];
-        const studentChats = chatsByStudent.get(studentId) || [];
-        const studentName = studentSubmissions[0]?.student?.username ||
-          studentChats[0]?.student?.username ||
-          'Unknown Student';
-
-        // Student header
-        doc.addPage();
-        doc.fontSize(16).fillColor('#6B46C1').text(`Student: ${studentName}`, { underline: true });
-        doc.moveDown();
-
-        // Chat Conversations Section
-        if (studentChats.length > 0) {
-          doc.fontSize(14).fillColor('#8B5CF6').text('Chat Conversations', { underline: true });
-          doc.moveDown(0.5);
-
-          for (const thread of studentChats) {
-            doc.fontSize(12).fillColor('#000000');
-            doc.text(`Thread: ${thread.title}`, { continued: false });
-            doc.fontSize(10).fillColor('#666666');
-            doc.text(`Started: ${formatDate(thread.createdAt)}`, { indent: 20 });
-            doc.moveDown(0.3);
-
-            for (const message of thread.messages) {
-              const senderLabel = message.sender === 'STUDENT' ? 'Student' : 'AI Assistant';
-              doc.fontSize(10).fillColor('#000000');
-              doc.text(`${senderLabel} (${formatDate(message.createdAt)}):`, { indent: 30, continued: false });
-              doc.fontSize(10).fillColor('#333333');
-              doc.text(message.content, { indent: 40, align: 'left', width: 450 });
-              doc.moveDown(0.5);
-            }
-            doc.moveDown();
-          }
+        try {
+          // Header
+          doc.fontSize(20).fillColor('#6B46C1').text('Classroom Session Report', { align: 'center' });
           doc.moveDown();
-        }
+          doc.fontSize(12).fillColor('#000000');
+          doc.text(`Classroom Code: ${session.classroomCode}`, { align: 'center' });
+          doc.text(`Session Started: ${formatDate(session.createdAt)}`, { align: 'center' });
+          if (session.endedAt) {
+            doc.text(`Session Ended: ${formatDate(session.endedAt)}`, { align: 'center' });
+          }
+          doc.moveDown(2);
 
-        // Image Generations Section
-        const imageSessions = imageSessionsByStudent.get(studentId);
-        if (imageSessions && imageSessions.size > 0) {
-          doc.fontSize(14).fillColor('#8B5CF6').text('Image Generations', { underline: true });
-          doc.moveDown(0.5);
+          // Process each student
+          const sortedStudentIds = Array.from(allStudentIds).sort();
 
-          // Sort root IDs by creation time of first submission
-          const sortedRootIds = Array.from(imageSessions.entries())
-            .sort(([, a], [, b]) => {
-              const aTime = new Date(a[0]?.createdAt || 0).getTime();
-              const bTime = new Date(b[0]?.createdAt || 0).getTime();
-              return aTime - bTime;
-            })
-            .map(([rootId]) => rootId);
+          for (const studentId of sortedStudentIds) {
+            const studentSubmissions = submissionsByStudent.get(studentId) || [];
+            const studentChats = chatsByStudent.get(studentId) || [];
+            const studentName = studentSubmissions[0]?.student?.username ||
+              studentChats[0]?.student?.username ||
+              'Unknown Student';
 
-          for (let sessionIndex = 0; sessionIndex < sortedRootIds.length; sessionIndex++) {
-            const rootId = sortedRootIds[sessionIndex];
-            const submissions = imageSessions.get(rootId) || [];
-            const firstSubmission = submissions[0];
+            // Student header
+            doc.addPage();
+            doc.fontSize(16).fillColor('#6B46C1').text(`Student: ${studentName}`, { underline: true });
+            doc.moveDown();
 
-            if (!firstSubmission) continue;
-
-            doc.fontSize(12).fillColor('#000000');
-            doc.text(`Image Session ${sessionIndex + 1}`, { underline: true });
-            doc.moveDown(0.3);
-
-            // List all submissions in this session (original + refinements)
-            for (const submission of submissions) {
-              const isOriginal = submission.revisionIndex === 0;
-              const indent = isOriginal ? 20 : 30;
-              const label = isOriginal ? 'Original Image' : `Refinement ${submission.revisionIndex}`;
-
-              const startY = doc.y;
-              if (startY > doc.page.height - 150) doc.addPage();
-
-              doc.fontSize(11).fillColor('#000000').text(`${label}:`, { indent });
-
-              // 1. Reference Images
-              let refImages: string[] = [];
-              if (submission.referenceImages) {
-                try {
-                  const parsed = JSON.parse(submission.referenceImages);
-                  if (Array.isArray(parsed)) refImages = parsed;
-                } catch (e) { /* ignore */ }
-              }
-
-              if (refImages.length > 0) {
-                const refIndent = indent + 10;
-                doc.fontSize(9).fillColor('#555555').text('Reference Images:', { indent: refIndent });
-                doc.moveDown(0.2);
-                let refX = doc.page.margins.left + refIndent;
-                const refY = doc.y;
-                let maxHeight = 0;
-
-                for (const ref of refImages) {
-                  const buf = resolveImageBuffer(ref);
-                  if (buf) {
-                    try {
-                      doc.image(buf, refX, refY, { fit: [80, 80] });
-                      refX += 90;
-                      if (80 > maxHeight) maxHeight = 80;
-                    } catch (e) { }
-                  }
-                }
-                if (maxHeight > 0) doc.y = refY + maxHeight + 5;
-              }
-
-              // 2. Prompt
-              const contentIndent = indent + 10;
-              doc.fontSize(10).fillColor('#333333');
-              doc.text(`Prompt: "${submission.prompt}"`, { indent: contentIndent, width: 450 });
-              doc.fontSize(9).fillColor('#666666');
-              doc.text(`Created: ${formatDate(submission.createdAt)}`, { indent: contentIndent });
-
-              // 3. Generated Image
-              if (submission.imageData && submission.status === 'SUCCESS') {
-                doc.moveDown(0.2);
-                const buf = resolveImageBuffer(submission.imageData);
-                if (buf) {
-                  try {
-                    if (doc.y + 200 > doc.page.height) doc.addPage();
-
-                    const imgX = doc.page.margins.left + contentIndent;
-                    doc.image(buf, imgX, doc.y, { fit: [200, 200] });
-                    doc.y += 210;
-                  } catch (e) {
-                    doc.text('[Image Error]', { indent: contentIndent });
-                  }
-                } else {
-                  doc.text('[Image Not Found]', { indent: contentIndent });
-                }
-              }
-
-              // Status
-              if (submission.status === 'ERROR') {
-                doc.fontSize(9).fillColor('#DC2626').text(`Error: ${submission.errorMessage}`, { indent: contentIndent });
-              } else if (submission.status === 'PENDING') {
-                doc.fontSize(9).fillColor('#F59E0B').text('Status: PENDING', { indent: contentIndent });
-              } else if (submission.status === 'SUCCESS' && submission.isShared) {
-                doc.fontSize(9).fillColor('#8B5CF6').text('Shared with class', { indent: contentIndent });
-              }
-
+            // Chat Conversations Section
+            if (studentChats.length > 0) {
+              doc.fontSize(14).fillColor('#8B5CF6').text('Chat Conversations', { underline: true });
               doc.moveDown(0.5);
+
+              for (const thread of studentChats) {
+                doc.fontSize(12).fillColor('#000000');
+                doc.text(`Thread: ${thread.title}`, { continued: false });
+                doc.fontSize(10).fillColor('#666666');
+                doc.text(`Started: ${formatDate(thread.createdAt)}`, { indent: 20 });
+                doc.moveDown(0.3);
+
+                for (const message of thread.messages) {
+                  const senderLabel = message.sender === 'STUDENT' ? 'Student' : 'AI Assistant';
+                  doc.fontSize(10).fillColor('#000000');
+                  doc.text(`${senderLabel} (${formatDate(message.createdAt)}):`, { indent: 30, continued: false });
+                  doc.fontSize(10).fillColor('#333333');
+                  doc.text(message.content, { indent: 40, align: 'left', width: 450 });
+                  doc.moveDown(0.5);
+                }
+                doc.moveDown();
+              }
+              doc.moveDown();
+            }
+
+            // Image Generations Section
+            const imageSessions = imageSessionsByStudent.get(studentId);
+            if (imageSessions && imageSessions.size > 0) {
+              doc.fontSize(14).fillColor('#8B5CF6').text('Image Generations', { underline: true });
+              doc.moveDown(0.5);
+
+              // Sort root IDs by creation time of first submission
+              const sortedRootIds = Array.from(imageSessions.entries())
+                .sort(([, a], [, b]) => {
+                  const aTime = new Date(a[0]?.createdAt || 0).getTime();
+                  const bTime = new Date(b[0]?.createdAt || 0).getTime();
+                  return aTime - bTime;
+                })
+                .map(([rootId]) => rootId);
+
+              for (let sessionIndex = 0; sessionIndex < sortedRootIds.length; sessionIndex++) {
+                const rootId = sortedRootIds[sessionIndex];
+                const submissions = imageSessions.get(rootId) || [];
+                const firstSubmission = submissions[0];
+
+                if (!firstSubmission) continue;
+
+                doc.fontSize(12).fillColor('#000000');
+                doc.text(`Image Session ${sessionIndex + 1}`, { underline: true });
+                doc.moveDown(0.3);
+
+                // List all submissions in this session (original + refinements)
+                for (const submission of submissions) {
+                  const isOriginal = submission.revisionIndex === 0;
+                  const indent = isOriginal ? 20 : 30;
+                  const label = isOriginal ? 'Original Image' : `Refinement ${submission.revisionIndex}`;
+
+                  const startY = doc.y;
+                  if (startY > doc.page.height - 150) doc.addPage();
+
+                  doc.fontSize(11).fillColor('#000000').text(`${label}:`, { indent });
+
+                  // 1. Reference Images
+                  let refImages: string[] = [];
+                  if (submission.referenceImages) {
+                    try {
+                      const parsed = JSON.parse(submission.referenceImages);
+                      if (Array.isArray(parsed)) refImages = parsed;
+                    } catch (e) { /* ignore */ }
+                  }
+
+                  if (refImages.length > 0) {
+                    const refIndent = indent + 10;
+                    doc.fontSize(9).fillColor('#555555').text('Reference Images:', { indent: refIndent });
+                    doc.moveDown(0.2);
+                    let refX = doc.page.margins.left + refIndent;
+                    const refY = doc.y;
+                    let maxHeight = 0;
+
+                    for (const ref of refImages) {
+                      const buf = await resolveImageBuffer(ref);
+                      if (buf) {
+                        try {
+                          doc.image(buf, refX, refY, { fit: [80, 80] });
+                          refX += 90;
+                          if (80 > maxHeight) maxHeight = 80;
+                        } catch (e) { }
+                      }
+                    }
+                    if (maxHeight > 0) doc.y = refY + maxHeight + 5;
+                  }
+
+                  // 2. Prompt
+                  const contentIndent = indent + 10;
+                  doc.fontSize(10).fillColor('#333333');
+                  doc.text(`Prompt: "${submission.prompt}"`, { indent: contentIndent, width: 450 });
+                  doc.fontSize(9).fillColor('#666666');
+                  doc.text(`Created: ${formatDate(submission.createdAt)}`, { indent: contentIndent });
+
+                  // 3. Generated Image
+                  if (submission.imageData && submission.status === 'SUCCESS') {
+                    doc.moveDown(0.2);
+                    const buf = await resolveImageBuffer(submission.imageData);
+                    if (buf) {
+                      try {
+                        if (doc.y + 200 > doc.page.height) doc.addPage();
+
+                        const imgX = doc.page.margins.left + contentIndent;
+                        doc.image(buf, imgX, doc.y, { fit: [200, 200] });
+                        doc.y += 210;
+                      } catch (e) {
+                        doc.text('[Image Error]', { indent: contentIndent });
+                      }
+                    } else {
+                      doc.text('[Image Not Found]', { indent: contentIndent });
+                    }
+                  }
+
+                  // Status
+                  if (submission.status === 'ERROR') {
+                    doc.fontSize(9).fillColor('#DC2626').text(`Error: ${submission.errorMessage}`, { indent: contentIndent });
+                  } else if (submission.status === 'PENDING') {
+                    doc.fontSize(9).fillColor('#F59E0B').text('Status: PENDING', { indent: contentIndent });
+                  } else if (submission.status === 'SUCCESS' && submission.isShared) {
+                    doc.fontSize(9).fillColor('#8B5CF6').text('Shared with class', { indent: contentIndent });
+                  }
+
+                  doc.moveDown(0.5);
+                }
+
+                doc.moveDown();
+              }
+            }
+
+            // If student has no activity
+            if (studentChats.length === 0 && (!imageSessions || imageSessions.size === 0)) {
+              doc.fontSize(10).fillColor('#666666').text('No activity recorded for this student.');
             }
 
             doc.moveDown();
           }
+
+          // Footer on last page
+          doc.fontSize(8).fillColor('#999999');
+          doc.text(
+            `Generated on ${formatDate(new Date())} | Total Students: ${sortedStudentIds.length}`,
+            { align: 'center' }
+          );
+
+          // Finalize PDF
+          doc.end();
+        } catch (error) {
+          console.error('PDF generation error', error);
+          controller.error(error);
         }
-
-        // If student has no activity
-        if (studentChats.length === 0 && (!imageSessions || imageSessions.size === 0)) {
-          doc.fontSize(10).fillColor('#666666').text('No activity recorded for this student.');
-        }
-
-        doc.moveDown();
-      }
-
-      // Footer on last page
-      doc.fontSize(8).fillColor('#999999');
-      doc.text(
-        `Generated on ${formatDate(new Date())} | Total Students: ${sortedStudentIds.length}`,
-        { align: 'center' }
-      );
-
-      // Finalize PDF
-      doc.end();
+      },
     });
 
-    const pdfBytes = new Uint8Array(pdfBuffer);
-
-    return new NextResponse(pdfBytes, {
+    return new NextResponse(stream, {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="session-${session.classroomCode}-${new Date().toISOString().split('T')[0]}.pdf"`,
-        'Content-Length': pdfBytes.byteLength.toString(),
       },
     });
   } catch (error) {
@@ -370,3 +373,4 @@ export async function GET() {
     );
   }
 }
+

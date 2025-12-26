@@ -1298,7 +1298,7 @@ export default function TeacherDashboard() {
                                       <div className="flex gap-1 overflow-x-auto py-1 scrollbar-thin">
                                         {refs.map((refImg, i) => (
                                           <div key={i} className="relative w-10 h-10 flex-shrink-0 rounded border border-gray-200 overflow-hidden bg-gray-50">
-                                            <Image src={refImg} alt="Ref" fill className="object-cover" />
+                                            <Image src={refImg} alt="Ref" fill className="object-cover" unoptimized />
                                           </div>
                                         ))}
                                       </div>
