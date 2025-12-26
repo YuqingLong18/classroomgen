@@ -1265,9 +1265,14 @@ export default function TeacherDashboard() {
                       const isShared = group.submissions.some((s) => s.isShared);
 
                       return group.submissions.map((submission) => {
-                        const imageSrc = submission.imageData
-                          ? `data:${submission.imageMimeType ?? 'image/png'};base64,${submission.imageData}`
-                          : null;
+                        let imageSrc = null;
+                        if (submission.imageData) {
+                          if (submission.imageData.startsWith('/api/uploads/')) {
+                            imageSrc = submission.imageData;
+                          } else {
+                            imageSrc = `data:${submission.imageMimeType ?? 'image/png'};base64,${submission.imageData}`;
+                          }
+                        }
 
                         return (
                           <div
