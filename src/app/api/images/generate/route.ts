@@ -94,7 +94,7 @@ export async function POST(request: Request) {
     // Validate and Optimize Reference Images
     let optimizedReferenceImages: string[] | undefined;
 
-    const isValidSize = (img: string) => img.length <= 5 * 1024 * 1024;
+    const isValidSize = (img: string) => img.length <= 10 * 1024 * 1024;
 
     const subDir = session.teacher
       ? `${session.teacher.username}/${session.classroomCode}`

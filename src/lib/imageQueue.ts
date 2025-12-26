@@ -94,12 +94,12 @@ class ImageGenerationQueue {
             // No jobs found, wait
             noJobCount++;
             if (noJobCount % 10 === 0) { // Log every 10 polls (~10s)
-              console.log(`[Queue ${this.loopId}] Waiting for jobs... (active: ${this.activeJobs})`);
+              // console.log(`[Queue ${this.loopId}] Waiting for jobs... (active: ${this.activeJobs})`);
             }
             await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
           }
         } else {
-          console.log(`[Queue ${this.loopId}] Max concurrency reached (${this.activeJobs})`);
+          // console.log(`[Queue ${this.loopId}] Max concurrency reached (${this.activeJobs})`);
           await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
         }
       } catch (error) {
@@ -123,9 +123,10 @@ class ImageGenerationQueue {
         const hydratedImages = await Promise.all(options.referenceImages.map(async (img) => {
           if (img.startsWith('/api/uploads/')) {
             try {
-              const filename = img.split('/').pop();
-              if (filename) {
-                const filepath = path.join(process.cwd(), 'uploads', filename);
+              // Fix: Preserve subdirectory structure (e.g. user/session/image.png)
+              const relativePath = img.replace('/api/uploads/', '');
+              if (relativePath) {
+                const filepath = path.join(process.cwd(), 'uploads', relativePath);
                 const buffer = await fs.readFile(filepath);
                 // Default to png if unknown, most uploads are likely png/jpeg
                 return `data:image/png;base64,${buffer.toString('base64')}`;
