@@ -412,13 +412,20 @@ async function callImageGeneration(prompt: string, options: CallOptions = {}, te
     model,
     prompt,
     size: options.size || '2048x2048', // Use provided size or default
+    watermark: false,
   };
 
   if (options.referenceImages && options.referenceImages.length > 0) {
-    // Volcengine uses 'image' parameter which can be a single image or list of images
+    // Volcengine API requires different formats based on reference image count:
+    // - 1 image: string (not array)
+    // - >=2 images: array + sequential_image_generation parameter
     // See: https://www.volcengine.com/docs/82379/1541523?lang=zh
-    // If multiple images, pass the array directly.
-    body.image = options.referenceImages;
+    if (options.referenceImages.length === 1) {
+      body.image = options.referenceImages[0]; // Single image as string
+    } else {
+      body.image = options.referenceImages; // Multiple images as array
+      body.sequential_image_generation = 'disabled';
+    }
   } else if (options.baseImageDataUrl) {
     // Volcengine uses 'image' parameter for reference image (single image)
     body.image = options.baseImageDataUrl;
