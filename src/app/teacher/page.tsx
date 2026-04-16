@@ -949,7 +949,13 @@ function TeacherDashboardContent() {
         <main className="min-h-screen bg-white text-gray-900 flex items-center justify-center p-6">
           <div className="w-full max-w-lg space-y-6">
             <header className="space-y-2 text-center">
-              <div className="flex justify-end mb-2">
+              <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
+                <a
+                  href="https://thisnexus.cn"
+                  className="inline-flex items-center rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+                >
+                  {t.common.backToNexus}
+                </a>
                 <LanguageToggle />
               </div>
               <h1 className="text-3xl font-semibold text-purple-700">{t.teacher.controlCenter}</h1>
@@ -989,7 +995,13 @@ function TeacherDashboardContent() {
       <main className="min-h-screen bg-white text-gray-900 flex items-center justify-center p-6">
         <div className="w-full max-w-lg space-y-8">
           <header className="space-y-2 text-center">
-            <div className="flex justify-end mb-2">
+            <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
+              <a
+                href="https://thisnexus.cn"
+                className="inline-flex items-center rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+              >
+                {t.common.backToNexus}
+              </a>
               <LanguageToggle />
             </div>
             <h1 className="text-3xl font-semibold text-purple-700">{t.teacher.controlCenter}</h1>
@@ -1092,8 +1104,14 @@ function TeacherDashboardContent() {
         {/* Header */}
         <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between pb-6 border-b border-gray-200">
           <div className="space-y-1">
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-2xl font-semibold text-gray-900">{t.teacher.dashboardTitle}</h1>
+              <a
+                href="https://thisnexus.cn"
+                className="inline-flex items-center rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+              >
+                {t.common.backToNexus}
+              </a>
               <LanguageToggle />
             </div>
             <p className="text-sm text-gray-600">

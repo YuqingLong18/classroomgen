@@ -33,6 +33,7 @@ export const translations = {
             student: 'Student',
             ai: 'AI',
             aiAssistant: 'AI Assistant',
+            backToNexus: 'Back to THIS Nexus',
         },
         student: {
             signInTitle: 'Student Sign In',
@@ -188,6 +189,7 @@ export const translations = {
             student: '学生',
             ai: 'AI',
             aiAssistant: 'AI助手',
+            backToNexus: '返回 THIS Nexus',
         },
         student: {
             signInTitle: '学生登录',
