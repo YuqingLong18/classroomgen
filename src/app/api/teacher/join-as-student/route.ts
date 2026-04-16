@@ -4,6 +4,81 @@ import { prisma } from '@/lib/prisma';
 import { getSessionFromCookies } from '@/lib/session';
 import { studentCookieName, teacherSessionCookieName } from '@/lib/auth';
 
+function normalizePreviewStudentName(displayName?: string | null, username?: string | null) {
+  const baseName = String(displayName ?? username ?? 'Teacher')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (baseName.length === 0) {
+    return 'Teacher';
+  }
+
+  return baseName.slice(0, 40);
+}
+
+async function resolvePreviewStudentRecord(sessionId: string, preferredName: string) {
+  const teacherLabel = 'Teacher';
+  const candidateNames = [
+    preferredName,
+    `${preferredName} (${teacherLabel})`,
+    `${preferredName} (${teacherLabel} 2)`,
+    `${preferredName} (${teacherLabel} 3)`,
+  ].map((value) => value.slice(0, 40));
+
+  for (const candidateName of candidateNames) {
+    const existingStudent = await prisma.student.findFirst({
+      where: {
+        sessionId,
+        username: candidateName,
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    if (!existingStudent) {
+      const student = await prisma.student.create({
+        data: {
+          username: candidateName,
+          passwordHash: null,
+          status: StudentStatus.ACTIVE,
+          sessionId,
+        },
+        select: {
+          id: true,
+          username: true,
+        },
+      });
+
+      return student;
+    }
+
+    if (existingStudent.status === StudentStatus.ACTIVE) {
+      return {
+        id: existingStudent.id,
+        username: candidateName,
+      };
+    }
+  }
+
+  const fallbackName = `${preferredName.slice(0, 29)} (Teacher ${Date.now().toString(36)})`.slice(0, 40);
+  const student = await prisma.student.create({
+    data: {
+      username: fallbackName,
+      passwordHash: null,
+      status: StudentStatus.ACTIVE,
+      sessionId,
+    },
+    select: {
+      id: true,
+      username: true,
+    },
+  });
+
+  return student;
+}
+
 export async function POST() {
   try {
     const cookies = await getSessionFromCookies();
@@ -26,6 +101,12 @@ export async function POST() {
         classroomCode: true,
         isActive: true,
         teacherId: true,
+        teacher: {
+          select: {
+            username: true,
+            displayName: true,
+          },
+        },
       },
     });
 
@@ -36,41 +117,22 @@ export async function POST() {
       );
     }
 
-    // Check if teacher already has a student record in this session
-    const teacherStudentName = `Teacher (Preview)`;
-    const existingStudent = await prisma.student.findFirst({
-      where: {
-        sessionId: session.id,
-        username: teacherStudentName,
-        status: StudentStatus.ACTIVE,
-      },
-      select: { id: true },
-    });
-
-    let studentId: string;
-    if (existingStudent) {
-      // Use existing student record
-      studentId = existingStudent.id;
-    } else {
-      // Create new student record for teacher
-      const student = await prisma.student.create({
-        data: {
-          username: teacherStudentName,
-          passwordHash: null,
-          status: StudentStatus.ACTIVE,
-          sessionId: session.id,
-        },
-        select: { id: true },
-      });
-      studentId = student.id;
-    }
+    const preferredName = normalizePreviewStudentName(
+      session.teacher.displayName,
+      session.teacher.username,
+    );
+    const previewStudent = await resolvePreviewStudentRecord(session.id, preferredName);
 
     // Keep the teacher as a teacher. Only attach a preview student identity.
     const response = NextResponse.json({
       success: true,
       sessionId: session.id,
       classroomCode: session.classroomCode,
-      studentId,
+      studentId: previewStudent.id,
+      student: {
+        id: previewStudent.id,
+        username: previewStudent.username,
+      },
     });
 
     // Save teacher session ID in a separate cookie before switching to student mode
@@ -81,7 +143,7 @@ export async function POST() {
       maxAge: 60 * 60 * 6, // 6 hours
     });
 
-    response.cookies.set(studentCookieName, studentId, {
+    response.cookies.set(studentCookieName, previewStudent.id, {
       httpOnly: true,
       sameSite: 'lax',
       path: '/',

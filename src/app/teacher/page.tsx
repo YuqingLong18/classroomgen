@@ -52,6 +52,11 @@ interface SessionResponse {
     maxStudentEdits?: number;
     hasTeacherAccess?: boolean;
     teacherSessionId?: string | null;
+    isTeacherPreviewingStudent?: boolean;
+    student?: {
+      id: string;
+      username: string;
+    } | null;
     teacher?: {
       id: string;
       username: string;
@@ -146,6 +151,7 @@ function TeacherDashboardContent() {
   const [formError, setFormError] = useState<string | null>(null);
   const [formLoading, setFormLoading] = useState(false);
   const [microsoftLoading, setMicrosoftLoading] = useState(false);
+  const [joiningAsStudent, setJoiningAsStudent] = useState(false);
   const [activity, setActivity] = useState<ActivitySubmission[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [students, setStudents] = useState<SessionStudent[]>([]);
@@ -278,6 +284,44 @@ function TeacherDashboardContent() {
       }
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
+    return null;
+  }, []);
+
+  const waitForTeacherPreviewSession = useCallback(async () => {
+    const attempts = 20;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        const res = await fetch('/api/session', { credentials: 'include' });
+        if (!res.ok) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          continue;
+        }
+        const text = await res.text();
+        if (!text || text.trim().length === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          continue;
+        }
+
+        let data: SessionResponse;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          continue;
+        }
+
+        if (data.session?.role === 'teacher' && data.session.student) {
+          setSession(data.session);
+          setLoading(false);
+          return data.session;
+        }
+      } catch (error) {
+        console.error('Failed to confirm preview student session', error);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
     return null;
   }, []);
 
@@ -1072,13 +1116,21 @@ function TeacherDashboardContent() {
             </button>
             <button
               onClick={async () => {
+                setJoiningAsStudent(true);
                 try {
                   const res = await fetch('/api/teacher/join-as-student', {
                     method: 'POST',
                     credentials: 'include',
                   });
                   if (res.ok) {
-                    window.location.href = '/';
+                    const confirmed = await waitForTeacherPreviewSession();
+                    if (confirmed) {
+                      window.location.assign('/');
+                      return;
+                    }
+
+                    await loadSession();
+                    window.location.assign('/');
                   } else {
                     const error = await res.json().catch(() => ({ message: 'Failed to join as student.' }));
                     alert(error.message ?? 'Failed to join as student.');
@@ -1086,11 +1138,14 @@ function TeacherDashboardContent() {
                 } catch (error) {
                   console.error('Failed to join as student', error);
                   alert('Failed to join as student.');
+                } finally {
+                  setJoiningAsStudent(false);
                 }
               }}
+              disabled={joiningAsStudent}
               className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"
             >
-              {t.teacher.joinAsStudent}
+              {joiningAsStudent ? t.common.loading : t.teacher.joinAsStudent}
             </button>
             <button
               onClick={() => {
