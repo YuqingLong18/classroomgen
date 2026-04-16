@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -134,7 +134,7 @@ function toDisplayTime(iso: string) {
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { LanguageToggle } from '@/components/LanguageToggle';
 
-export default function TeacherDashboard() {
+function TeacherDashboardContent() {
   const { t } = useLanguage();
   const searchParams = useSearchParams();
   const [session, setSession] = useState<SessionResponse['session']>(null);
@@ -471,7 +471,7 @@ export default function TeacherDashboard() {
     } finally {
       setApiKeySaving(false);
     }
-  }, [apiKeyValue]);
+  }, [apiKeyManagedByEnv, apiKeyValue, t.teacher.apiKeyManagedBySchool]);
 
   useEffect(() => {
     if (session?.role === 'teacher') {
@@ -1568,5 +1568,13 @@ export default function TeacherDashboard() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function TeacherDashboard() {
+  return (
+    <Suspense fallback={null}>
+      <TeacherDashboardContent />
+    </Suspense>
   );
 }
