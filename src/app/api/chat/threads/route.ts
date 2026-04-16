@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { getSessionFromCookies, requireActiveStudent } from '@/lib/session';
+import { getStudentAccessFromCookies, requireActiveStudent } from '@/lib/session';
 
 const MAX_THREADS_PER_STUDENT = 5;
 const CHAT_DISABLED_MESSAGE = 'Chat assistant is currently disabled.';
@@ -11,11 +11,13 @@ const createSchema = z.object({
 });
 
 export async function GET() {
-  const { sessionId, role, studentId } = await getSessionFromCookies();
+  const studentAccess = await getStudentAccessFromCookies();
 
-  if (!sessionId || role !== 'student' || !studentId) {
+  if (!studentAccess) {
     return NextResponse.json({ message: 'Student access required.' }, { status: 403 });
   }
+
+  const { sessionId, studentId } = studentAccess;
 
   const studentStatus = await requireActiveStudent(sessionId, studentId);
   if (!studentStatus.active) {
@@ -66,11 +68,13 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { sessionId, role, studentId } = await getSessionFromCookies();
+    const studentAccess = await getStudentAccessFromCookies();
 
-    if (!sessionId || role !== 'student' || !studentId) {
+    if (!studentAccess) {
       return NextResponse.json({ message: 'Student access required.' }, { status: 403 });
     }
+
+    const { sessionId, studentId } = studentAccess;
 
     const session = await prisma.session.findUnique({
       where: { id: sessionId },

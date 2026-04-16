@@ -43,6 +43,21 @@ export async function getSessionFromCookies() {
   return { sessionId, role, studentId, teacherSessionId };
 }
 
+export async function getStudentAccessFromCookies() {
+  const { sessionId, role, studentId } = await getSessionFromCookies();
+
+  if (!sessionId || !studentId) {
+    return null;
+  }
+
+  return {
+    sessionId,
+    studentId,
+    role,
+    isTeacherPreview: role === 'teacher',
+  };
+}
+
 export async function getTeacherSessionId() {
   const cookieStore = await cookies();
   const teacherSessionId = cookieStore.get(teacherSessionCookieName)?.value;

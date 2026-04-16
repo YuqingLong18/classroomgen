@@ -17,6 +17,7 @@ interface SessionState {
   maxStudentEdits?: number;
   hasTeacherAccess?: boolean;
   teacherSessionId?: string | null;
+  isTeacherPreviewingStudent?: boolean;
   student?: {
     id: string;
     username: string;
@@ -121,6 +122,7 @@ export default function StudentHome() {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sessionRequestIdRef = useRef(0);
+  const hasStudentContext = Boolean(session?.student);
 
   // ... (keep existing useEffects and handlers)
 
@@ -257,24 +259,24 @@ export default function StudentHome() {
   }, [loadSession]);
 
   useEffect(() => {
-    if (!session?.id || session.role !== 'student') return;
+    if (!session?.id || !hasStudentContext) return;
     const interval = window.setInterval(() => {
       void loadSession();
     }, 10000);
     return () => {
       window.clearInterval(interval);
     };
-  }, [session?.id, session?.role, loadSession]);
+  }, [session?.id, hasStudentContext, loadSession]);
 
   useEffect(() => {
-    if (session?.id && session.role === 'student') {
+    if (session?.id && hasStudentContext) {
       void loadSubmissions(null, false);
     }
-  }, [session?.id, session?.role, loadSubmissions]);
+  }, [session?.id, hasStudentContext, loadSubmissions]);
 
   // Poll for pending submissions to update them when generation completes
   useEffect(() => {
-    if (!session?.id || session.role !== 'student') return;
+    if (!session?.id || !hasStudentContext) return;
 
     // Check if there are any pending submissions
     const hasPendingSubmissions = submissions.some(
@@ -292,7 +294,7 @@ export default function StudentHome() {
     return () => {
       window.clearInterval(interval);
     };
-  }, [session?.id, session?.role, submissions, loadSubmissions]);
+  }, [session?.id, hasStudentContext, submissions, loadSubmissions]);
 
   const handleLogin = useCallback(async () => {
     if (classroomCode.length !== 8) {
@@ -570,7 +572,7 @@ export default function StudentHome() {
     );
   }
 
-  if (!session || session.role !== 'student') {
+  if (!session || !hasStudentContext) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#ede9fe] via-[#f7f5ff] to-[#ffffff] p-6">
         <div className="max-w-md w-full bg-[var(--color-surface)] shadow-[var(--shadow-soft)] rounded-2xl p-8 space-y-6 border border-[var(--color-border)]/70 backdrop-blur">
@@ -704,6 +706,11 @@ export default function StudentHome() {
                 {session.student?.username ?? 'Student'}
               </span>
             </p>
+            {session.isTeacherPreviewingStudent ? (
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                Teacher preview mode
+              </p>
+            ) : null}
             <p>
               {t.student.sessionStartedAt}{' '}
               <span className="font-medium text-[var(--color-foreground)]">

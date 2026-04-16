@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
+import { getSessionFromCookies } from '@/lib/session';
 import { roleCookieName, sessionCookieName, studentCookieName, teacherSessionCookieName } from '@/lib/auth';
 
 export async function POST() {
   try {
-    const cookieStore = await cookies();
-    const teacherSessionId = cookieStore.get(teacherSessionCookieName)?.value;
+    const { sessionId, role, teacherSessionId: savedTeacherSessionId } = await getSessionFromCookies();
+    const teacherSessionId = role === 'teacher' && sessionId ? sessionId : savedTeacherSessionId;
 
     if (!teacherSessionId) {
       return NextResponse.json(
@@ -49,10 +49,8 @@ export async function POST() {
       teacher: session.teacher,
     });
 
-    // Clear student cookies
+    // Clear preview student cookies, keep teacher session active
     response.cookies.delete(studentCookieName);
-
-    // Restore teacher cookies
     response.cookies.set(sessionCookieName, session.id, {
       httpOnly: true,
       sameSite: 'lax',
@@ -66,7 +64,6 @@ export async function POST() {
       maxAge: 60 * 60 * 6,
     });
 
-    // Clear teacher session cookie (no longer needed)
     response.cookies.delete(teacherSessionCookieName);
 
     console.log(`Teacher returned to teacher view for session ${session.classroomCode}`);

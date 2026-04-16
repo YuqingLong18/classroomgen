@@ -1,6 +1,7 @@
 'use client';
 
 import Image from 'next/image';
+import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -135,6 +136,7 @@ import { LanguageToggle } from '@/components/LanguageToggle';
 
 export default function TeacherDashboard() {
   const { t } = useLanguage();
+  const searchParams = useSearchParams();
   const [session, setSession] = useState<SessionResponse['session']>(null);
   const [loading, setLoading] = useState(true);
   const [returningToTeacher, setReturningToTeacher] = useState(false);
@@ -143,6 +145,7 @@ export default function TeacherDashboard() {
   const [teacherPassword, setTeacherPassword] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [formLoading, setFormLoading] = useState(false);
+  const [microsoftLoading, setMicrosoftLoading] = useState(false);
   const [activity, setActivity] = useState<ActivitySubmission[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [students, setStudents] = useState<SessionStudent[]>([]);
@@ -158,12 +161,31 @@ export default function TeacherDashboard() {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [selectedImage, setSelectedImage] = useState<{ src: string; prompt: string; mimeType: string | null } | null>(null);
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
+  const [apiKeyManagedByEnv, setApiKeyManagedByEnv] = useState(false);
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
   const [apiKeyValue, setApiKeyValue] = useState('');
   const [apiKeySaving, setApiKeySaving] = useState(false);
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
   const sessionRequestIdRef = useRef(0);
   const autoReturnAttemptedRef = useRef(false);
+
+  const sharedAuthError = useMemo(() => {
+    const error = searchParams.get('error');
+
+    if (error === 'teacher_only') {
+      return t.teacher.teacherOnlyError;
+    }
+
+    if (error === 'missing_email') {
+      return t.teacher.missingEmailError;
+    }
+
+    if (error === 'login_failed') {
+      return t.teacher.loginFailedError;
+    }
+
+    return null;
+  }, [searchParams, t.teacher.loginFailedError, t.teacher.missingEmailError, t.teacher.teacherOnlyError]);
 
   const toggleSection = useCallback((sectionId: string) => {
     setCollapsedSections((prev) => {
@@ -399,6 +421,7 @@ export default function TeacherDashboard() {
       if (res.ok) {
         const data = await res.json();
         setHasApiKey(data.hasApiKey ?? false);
+        setApiKeyManagedByEnv(data.managedByEnv ?? false);
       }
     } catch (error) {
       console.error('Failed to load API key status', error);
@@ -414,6 +437,11 @@ export default function TeacherDashboard() {
   const handleSaveApiKey = useCallback(async () => {
     if (!apiKeyValue.trim()) {
       setApiKeyError('API key cannot be empty');
+      return;
+    }
+
+    if (apiKeyManagedByEnv) {
+      setApiKeyError(t.teacher.apiKeyManagedBySchool);
       return;
     }
 
@@ -548,6 +576,23 @@ export default function TeacherDashboard() {
       setFormLoading(false);
     }
   }, [teacherUsername, teacherPassword, session, waitForSessionRole, loadSession, loadActivity, invalidatePendingSessionLoads]);
+
+  const handleMicrosoftLogin = useCallback(() => {
+    if (session?.hasTeacherAccess && session.role !== 'teacher') {
+      const confirmed = window.confirm(
+        'You already have an active classroom. Signing in again will end the current session for everyone and create a new classroom. Continue?',
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    setMicrosoftLoading(true);
+    setFormError(null);
+    const url = new URL('/api/teacher/microsoft', window.location.origin);
+    url.searchParams.set('redirect', '/teacher');
+    window.location.href = url.toString();
+  }, [session]);
 
   const handleEndSession = useCallback(async () => {
     setFormLoading(true);
@@ -769,6 +814,83 @@ export default function TeacherDashboard() {
     }));
   }, [chats]);
 
+  const teacherSignInCard = (
+    <section className="bg-purple-50 rounded-2xl p-6 space-y-5 border border-purple-200">
+      {sharedAuthError ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {sharedAuthError}
+        </div>
+      ) : null}
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 space-y-3">
+        <div className="space-y-1">
+          <h2 className="text-base font-semibold text-gray-900">{t.teacher.microsoftSignIn}</h2>
+          <p className="text-sm text-gray-600">{t.teacher.microsoftSignInDesc}</p>
+        </div>
+        <button
+          onClick={() => handleMicrosoftLogin()}
+          disabled={microsoftLoading || formLoading}
+          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-lg transition disabled:bg-gray-300 disabled:text-gray-500"
+        >
+          {microsoftLoading ? t.teacher.signingIn : t.teacher.microsoftSignIn}
+        </button>
+      </div>
+
+      <div className="border-t border-purple-200 pt-5 space-y-5">
+        <div className="space-y-1">
+          <h2 className="text-base font-semibold text-gray-900">{t.teacher.legacySignInTitle}</h2>
+          <p className="text-sm text-gray-600">{t.teacher.legacySignInDesc}</p>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-xs uppercase tracking-wide text-gray-600" htmlFor="teacher-username">
+            {t.teacher.username}
+          </label>
+          <input
+            id="teacher-username"
+            type="text"
+            value={teacherUsername}
+            onChange={(event) => {
+              setTeacherUsername(event.target.value);
+              setFormError(null);
+            }}
+            autoComplete="username"
+            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
+            placeholder="e.g. ms-jackson"
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-xs uppercase tracking-wide text-gray-600" htmlFor="teacher-password">
+            {t.teacher.password}
+          </label>
+          <input
+            id="teacher-password"
+            type="password"
+            value={teacherPassword}
+            onChange={(event) => {
+              setTeacherPassword(event.target.value);
+              setFormError(null);
+            }}
+            autoComplete="current-password"
+            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
+            placeholder="Enter your password"
+          />
+        </div>
+        {formError ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {formError}
+          </div>
+        ) : null}
+        <button
+          onClick={() => void handleTeacherLogin()}
+          disabled={formLoading || microsoftLoading || teacherUsername.trim().length === 0 || teacherPassword.length === 0}
+          className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 rounded-lg transition disabled:bg-gray-300 disabled:text-gray-500"
+        >
+          {formLoading ? t.teacher.signingIn : t.teacher.enterDashboard}
+        </button>
+      </div>
+    </section>
+  );
+
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-white text-gray-900">
@@ -812,52 +934,7 @@ export default function TeacherDashboard() {
               <p className="text-sm text-gray-700">
                 Need a fresh classroom instead? Sign in below.
               </p>
-              <div className="space-y-2">
-                <label className="text-xs uppercase tracking-wide text-gray-600" htmlFor="teacher-username">
-                  {t.teacher.username}
-                </label>
-                <input
-                  id="teacher-username"
-                  type="text"
-                  value={teacherUsername}
-                  onChange={(event) => {
-                    setTeacherUsername(event.target.value);
-                    setFormError(null);
-                  }}
-                  autoComplete="username"
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
-                  placeholder="e.g. ms-jackson"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs uppercase tracking-wide text-gray-600" htmlFor="teacher-password">
-                  {t.teacher.password}
-                </label>
-                <input
-                  id="teacher-password"
-                  type="password"
-                  value={teacherPassword}
-                  onChange={(event) => {
-                    setTeacherPassword(event.target.value);
-                    setFormError(null);
-                  }}
-                  autoComplete="current-password"
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
-                  placeholder="Enter your password"
-                />
-              </div>
-              {formError ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {formError}
-                </div>
-              ) : null}
-              <button
-                onClick={() => void handleTeacherLogin()}
-                disabled={formLoading || teacherUsername.trim().length === 0 || teacherPassword.length === 0}
-                className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 rounded-lg transition disabled:bg-gray-300 disabled:text-gray-500"
-              >
-                {formLoading ? t.teacher.signingIn : t.teacher.enterDashboard}
-              </button>
+              {teacherSignInCard}
             </section>
           </div>
         </main>
@@ -876,54 +953,7 @@ export default function TeacherDashboard() {
               {t.teacher.signInDesc}
             </p>
           </header>
-          <section className="bg-purple-50 rounded-2xl p-6 space-y-5 border border-purple-200">
-            <div className="space-y-2">
-              <label className="text-xs uppercase tracking-wide text-gray-600" htmlFor="teacher-username">
-                {t.teacher.username}
-              </label>
-              <input
-                id="teacher-username"
-                type="text"
-                value={teacherUsername}
-                onChange={(event) => {
-                  setTeacherUsername(event.target.value);
-                  setFormError(null);
-                }}
-                autoComplete="username"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
-                placeholder="e.g. ms-jackson"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs uppercase tracking-wide text-gray-600" htmlFor="teacher-password">
-                {t.teacher.password}
-              </label>
-              <input
-                id="teacher-password"
-                type="password"
-                value={teacherPassword}
-                onChange={(event) => {
-                  setTeacherPassword(event.target.value);
-                  setFormError(null);
-                }}
-                autoComplete="current-password"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
-                placeholder="Enter your password"
-              />
-            </div>
-            {formError ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {formError}
-              </div>
-            ) : null}
-            <button
-              onClick={() => void handleTeacherLogin()}
-              disabled={formLoading || teacherUsername.trim().length === 0 || teacherPassword.length === 0}
-              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 rounded-lg transition disabled:bg-gray-300 disabled:text-gray-500"
-            >
-              {formLoading ? t.teacher.signingIn : t.teacher.enterDashboard}
-            </button>
-          </section>
+          {teacherSignInCard}
         </div>
       </main>
     );
@@ -947,7 +977,14 @@ export default function TeacherDashboard() {
         {/* API Key Configuration Section - At the very top */}
         {session && session.role === 'teacher' && (
           <section className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            {!showApiKeyInput ? (
+            {apiKeyManagedByEnv ? (
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-gray-700">{t.teacher.apiKeyTitle}:</span>
+                  <span className="text-sm text-green-700 font-medium">{t.teacher.apiKeyManagedBySchool}</span>
+                </div>
+              </div>
+            ) : !showApiKeyInput ? (
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-medium text-gray-700">{t.teacher.apiKeyTitle}:</span>

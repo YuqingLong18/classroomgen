@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { SubmissionStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { getSessionFromCookies, requireActiveStudent } from '@/lib/session';
+import { getStudentAccessFromCookies, requireActiveStudent } from '@/lib/session';
 
 const bodySchema = z.object({
   submissionId: z.string().cuid(),
@@ -11,11 +11,13 @@ const bodySchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const { sessionId, role, studentId } = await getSessionFromCookies();
+    const studentAccess = await getStudentAccessFromCookies();
 
-    if (!sessionId || role !== 'student' || !studentId) {
+    if (!studentAccess) {
       return NextResponse.json({ message: 'Student access required.' }, { status: 403 });
     }
+
+    const { sessionId, studentId } = studentAccess;
 
     const payload = await request.json();
     const { submissionId, like } = bodySchema.parse(payload);

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { verifyTeacherAccess } from '@/lib/session';
 import { encryptApiKey } from '@/lib/apiKeyEncryption';
+import { getTeacherApiKeyDetails } from '@/lib/teacherApiKey';
 
 const bodySchema = z.object({
   apiKey: z.string().trim().min(1, 'API key is required'),
@@ -27,21 +28,14 @@ export async function GET() {
       return NextResponse.json({ message: 'Session not found.' }, { status: 404 });
     }
 
-    const teacher = await prisma.teacher.findUnique({
-      where: { id: session.teacherId },
-      select: {
-        id: true,
-        apiKeyEncrypted: true,
-      },
-    });
-
-    if (!teacher) {
+    const details = await getTeacherApiKeyDetails(session.teacherId);
+    if (!details) {
       return NextResponse.json({ message: 'Teacher not found.' }, { status: 404 });
     }
 
-    // Return whether API key is configured (but not the actual key)
     return NextResponse.json({
-      hasApiKey: !!teacher.apiKeyEncrypted,
+      hasApiKey: details.hasApiKey,
+      managedByEnv: details.managedByEnv,
     });
   } catch (error) {
     console.error('Failed to get API key status', error);
@@ -72,6 +66,14 @@ export async function POST(request: Request) {
 
     if (!session) {
       return NextResponse.json({ message: 'Session not found.' }, { status: 404 });
+    }
+
+    const details = await getTeacherApiKeyDetails(session.teacherId);
+    if (details.managedByEnv) {
+      return NextResponse.json(
+        { message: 'Microsoft SSO teachers use the school-managed API key from the server configuration.' },
+        { status: 403 }
+      );
     }
 
     // Encrypt the API key before storing

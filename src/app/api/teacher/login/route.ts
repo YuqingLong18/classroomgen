@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
-import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { roleCookieName, sessionCookieName, studentCookieName } from '@/lib/auth';
-import { deactivateTeacherSessions, generateUniqueClassroomCode } from '@/lib/session';
+import { applyTeacherSessionCookies, createOrResumeTeacherClassroom } from '@/lib/teacher-session';
 
 const bodySchema = z.object({
   username: z.string().trim().min(1, 'Username is required'),
@@ -49,7 +47,7 @@ export async function POST(request: Request) {
       const { compare } = await import('bcryptjs');
       const teacher = await prisma.teacher.findUnique({
         where: { username },
-        select: { id: true, username: true, passwordHash: true }
+        select: { id: true, username: true, passwordHash: true },
       });
 
       if (teacher && teacher.passwordHash) {
@@ -92,72 +90,7 @@ export async function POST(request: Request) {
     }
 
     // Check for existing active session to resume
-    const sessionDurationMinutes = parseInt(process.env.CLASSROOM_SESSION_DURATION_MINUTES || '1440', 10);
-    const validSessionThreshold = new Date(Date.now() - sessionDurationMinutes * 60 * 1000);
-
-    const existingSession = await prisma.session.findFirst({
-      where: {
-        teacherId: teacher.id,
-        isActive: true,
-        createdAt: {
-          gte: validSessionThreshold,
-        },
-      },
-      select: {
-        id: true,
-        classroomCode: true,
-        createdAt: true,
-        chatEnabled: true,
-        maxStudentEdits: true,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
-
-    let session;
-
-    if (existingSession) {
-      // Resume existing session
-      session = existingSession;
-      console.log(`Resuming existing session ${session.classroomCode} for teacher ${teacher.username}`);
-    } else {
-      // Deactivate old sessions and create a new one
-      await deactivateTeacherSessions(teacher.id);
-
-      for (let attempt = 0; attempt < 5; attempt += 1) {
-        const classroomCode = await generateUniqueClassroomCode();
-        try {
-          session = await prisma.session.create({
-            data: {
-              teacherId: teacher.id,
-              classroomCode,
-            },
-            select: {
-              id: true,
-              classroomCode: true,
-              createdAt: true,
-              chatEnabled: true,
-              maxStudentEdits: true,
-            },
-          });
-          break;
-        } catch (error) {
-          if (
-            error instanceof Prisma.PrismaClientKnownRequestError &&
-            error.code === 'P2002' &&
-            attempt < 4
-          ) {
-            continue;
-          }
-          throw error;
-        }
-      }
-    }
-
-    if (!session) {
-      return NextResponse.json({ message: 'Unable to create or resume a classroom. Please try again.' }, { status: 500 });
-    }
+    const session = await createOrResumeTeacherClassroom(teacher.id);
 
     const response = NextResponse.json({
       session: {
@@ -174,21 +107,7 @@ export async function POST(request: Request) {
       },
     });
 
-    // IMPORTANT: Clear student cookies FIRST to prevent conflicts
-    response.cookies.delete(studentCookieName);
-
-    response.cookies.set(sessionCookieName, session.id, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 6,
-    });
-    response.cookies.set(roleCookieName, 'teacher', {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 6,
-    });
+    applyTeacherSessionCookies(response, session.id);
 
     console.log(`Teacher ${teacher.username} logged in, session: ${session.classroomCode}`);
 

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { getSessionFromCookies, requireActiveStudent } from '@/lib/session';
+import { getStudentAccessFromCookies, requireActiveStudent } from '@/lib/session';
 import { SubmissionStatus } from '@prisma/client';
 import { enqueueImageGeneration } from '@/lib/imageQueue';
 
@@ -14,13 +14,15 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const { sessionId, role, studentId } = await getSessionFromCookies();
+  const studentAccess = await getStudentAccessFromCookies();
 
-  if (!sessionId || !role) {
+  if (!studentAccess) {
     return NextResponse.json({ message: 'Join the classroom session before generating images.' }, { status: 401 });
   }
 
-  if (role !== 'student' || !studentId) {
+  const { sessionId, studentId } = studentAccess;
+
+  if (!studentId) {
     return NextResponse.json({ message: 'Only students can generate images in this view.' }, { status: 403 });
   }
 

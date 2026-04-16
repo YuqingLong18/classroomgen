@@ -25,6 +25,8 @@ interface SessionState {
     username: string;
     displayName: string | null;
   } | null;
+  hasTeacherAccess?: boolean;
+  isTeacherPreviewingStudent?: boolean;
 }
 
 interface ThreadSummary {
@@ -79,6 +81,7 @@ export default function StudentChatPage() {
   const [sending, setSending] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const hasStudentContext = Boolean(session?.student);
 
   const loadSession = useCallback(async () => {
     try {
@@ -94,7 +97,7 @@ export default function StudentChatPage() {
       }
       const data = await res.json();
       if (data.session) {
-        const disabled = data.session.role === 'student' && data.session.chatEnabled === false;
+        const disabled = Boolean(data.session.student) && data.session.chatEnabled === false;
         setChatDisabled(disabled);
         if (disabled) {
           setThreads([]);
@@ -197,20 +200,20 @@ export default function StudentChatPage() {
   }, [loadSession]);
 
   useEffect(() => {
-    if (!session?.id || session.role !== 'student') return;
+    if (!session?.id || !hasStudentContext) return;
     const interval = window.setInterval(() => {
       void loadSession();
     }, 10000);
     return () => {
       window.clearInterval(interval);
     };
-  }, [session?.id, session?.role, loadSession]);
+  }, [session?.id, hasStudentContext, loadSession]);
 
   useEffect(() => {
-    if (session?.id && session.role === 'student' && !chatDisabled) {
+    if (session?.id && hasStudentContext && !chatDisabled) {
       void loadThreads();
     }
-  }, [session?.id, session?.role, chatDisabled, loadThreads]);
+  }, [session?.id, hasStudentContext, chatDisabled, loadThreads]);
 
   useEffect(() => {
     if (selectedThreadId && !chatDisabled) {
@@ -372,7 +375,33 @@ export default function StudentChatPage() {
     return (
       <main className="min-h-screen bg-gradient-to-br from-[#ede9fe] via-[#f7f5ff] to-[#ffffff] p-6 text-[var(--color-foreground)]">
         <div className="max-w-xl mx-auto space-y-6">
-          <StudentNav />
+          <div className="flex items-center justify-between gap-3">
+            <StudentNav />
+            {session?.hasTeacherAccess ? (
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/teacher/return-to-teacher', {
+                      method: 'POST',
+                      credentials: 'include',
+                    });
+                    if (res.ok) {
+                      window.location.href = '/teacher';
+                    } else {
+                      const error = await res.json().catch(() => ({ message: 'Failed to return to teacher view.' }));
+                      alert(error.message ?? 'Failed to return to teacher view.');
+                    }
+                  } catch (error) {
+                    console.error('Failed to return to teacher view', error);
+                    alert('Failed to return to teacher view.');
+                  }
+                }}
+                className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition"
+              >
+                {t.teacher.returnToTeacherView}
+              </button>
+            ) : null}
+          </div>
           <div className="bg-[var(--color-surface)] border border-[var(--color-border)] shadow-[var(--shadow-soft)] rounded-2xl p-10 text-center space-y-4 backdrop-blur">
             <h1 className="text-2xl font-semibold text-[var(--color-accent-strong)]">{t.student.chatDisabledTitle}</h1>
             <p className="text-sm text-[var(--color-muted)]">
@@ -383,17 +412,25 @@ export default function StudentChatPage() {
                 {t.student.signedInAs} <span className="font-medium text-[var(--color-foreground)]">{session.student.username}</span>
               </p>
             ) : null}
+            {session?.isTeacherPreviewingStudent ? (
+              <p className="text-xs text-[var(--color-muted-foreground)]">
+                Teacher preview mode
+              </p>
+            ) : null}
           </div>
         </div>
       </main>
     );
   }
 
-  if (!session || session.role !== 'student') {
+  if (!session || !hasStudentContext) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#ede9fe] via-[#f7f5ff] to-[#ffffff] p-6">
         <div className="max-w-md w-full bg-[var(--color-surface)] shadow-[var(--shadow-soft)] rounded-2xl p-8 space-y-6 border border-[var(--color-border)] backdrop-blur">
           <header className="space-y-2 text-center">
+            <div className="flex justify-end mb-2">
+              <LanguageToggle />
+            </div>
             <h1 className="text-2xl font-semibold text-[var(--color-accent-strong)]">{t.student.signInTitle}</h1>
             <p className="text-sm text-[var(--color-muted)]">
               {t.student.signInDesc}
@@ -470,10 +507,41 @@ export default function StudentChatPage() {
           <div className="flex flex-col items-end gap-2">
             <LanguageToggle />
             <div className="text-sm text-[var(--color-muted-foreground)] text-right space-y-1">
+              {session.hasTeacherAccess ? (
+                <div className="mb-2">
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await fetch('/api/teacher/return-to-teacher', {
+                          method: 'POST',
+                          credentials: 'include',
+                        });
+                        if (res.ok) {
+                          window.location.href = '/teacher';
+                        } else {
+                          const error = await res.json().catch(() => ({ message: 'Failed to return to teacher view.' }));
+                          alert(error.message ?? 'Failed to return to teacher view.');
+                        }
+                      } catch (error) {
+                        console.error('Failed to return to teacher view', error);
+                        alert('Failed to return to teacher view.');
+                      }
+                    }}
+                    className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition"
+                  >
+                    {t.teacher.returnToTeacherView}
+                  </button>
+                </div>
+              ) : null}
               <p>
                 {t.student.signedInAs}{' '}
                 <span className="font-medium text-[var(--color-foreground)]">{session.student?.username ?? t.common.student}</span>
               </p>
+              {session.isTeacherPreviewingStudent ? (
+                <p className="text-xs text-[var(--color-muted-foreground)]">
+                  Teacher preview mode
+                </p>
+              ) : null}
               {session.classroomCode ? (
                 <p>
                   {t.student.classroomCode}{' '}

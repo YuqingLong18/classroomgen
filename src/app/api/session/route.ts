@@ -60,6 +60,7 @@ export async function GET() {
     }
 
     let student: { id: string; username: string } | null = null;
+    let clearStudentOnly = false;
     if (studentId) {
       const record = await prisma.student.findUnique({
         where: { id: studentId },
@@ -69,22 +70,31 @@ export async function GET() {
       if (record && record.sessionId === session.id) {
         if (record.status !== StudentStatus.ACTIVE) {
           console.log(`Student ${record.username} (${studentId}) was removed from session`);
-          const response = NextResponse.json({ session: null, studentRemoved: true });
+          if (role === 'teacher') {
+            clearStudentOnly = true;
+          } else {
+            const response = NextResponse.json({ session: null, studentRemoved: true });
+            response.cookies.delete(sessionCookieName);
+            response.cookies.delete(roleCookieName);
+            response.cookies.delete(studentCookieName);
+            response.cookies.delete(teacherSessionCookieName);
+            return response;
+          }
+        } else {
+          student = { id: record.id, username: record.username };
+        }
+      } else {
+        console.log(`Session mismatch: studentId ${studentId} not found or belongs to different session`);
+        if (role === 'teacher') {
+          clearStudentOnly = true;
+        } else {
+          const response = NextResponse.json({ session: null });
           response.cookies.delete(sessionCookieName);
           response.cookies.delete(roleCookieName);
           response.cookies.delete(studentCookieName);
           response.cookies.delete(teacherSessionCookieName);
           return response;
         }
-        student = { id: record.id, username: record.username };
-      } else {
-        console.log(`Session mismatch: studentId ${studentId} not found or belongs to different session`);
-        const response = NextResponse.json({ session: null });
-        response.cookies.delete(sessionCookieName);
-        response.cookies.delete(roleCookieName);
-        response.cookies.delete(studentCookieName);
-        response.cookies.delete(teacherSessionCookieName);
-        return response;
       }
     }
 
@@ -113,7 +123,7 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       session: {
         id: session.id,
         createdAt: session.createdAt,
@@ -125,8 +135,15 @@ export async function GET() {
         student,
         hasTeacherAccess, // Indicates if user can access teacher dashboard
         teacherSessionId: teacherSessionForAccess, // Teacher session ID if viewing as student
+        isTeacherPreviewingStudent: role === 'teacher' && Boolean(student),
       },
     });
+
+    if (clearStudentOnly) {
+      response.cookies.delete(studentCookieName);
+    }
+
+    return response;
   } catch (error) {
     console.error('Error in GET /api/session:', error);
     // Return 200 with null session instead of 500 - no session is a valid state

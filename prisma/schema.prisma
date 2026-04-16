@@ -32,6 +32,7 @@ enum StudentStatus {
 model Teacher {
   id           String    @id @default(cuid())
   username     String    @unique
+  email        String?   @unique
   passwordHash String
   displayName  String?
   apiKeyEncrypted String? // Encrypted Volcengine API key

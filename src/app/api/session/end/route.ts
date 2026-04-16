@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getSessionFromCookies } from '@/lib/session';
-import { roleCookieName, sessionCookieName, studentCookieName } from '@/lib/auth';
+import { roleCookieName, sessionCookieName, studentCookieName, teacherSessionCookieName } from '@/lib/auth';
 
 export async function POST() {
   const { sessionId, role } = await getSessionFromCookies();
@@ -19,5 +19,6 @@ export async function POST() {
   response.cookies.delete(sessionCookieName);
   response.cookies.delete(roleCookieName);
   response.cookies.delete(studentCookieName);
+  response.cookies.delete(teacherSessionCookieName);
   return response;
 }

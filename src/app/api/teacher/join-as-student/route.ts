@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { StudentStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { getSessionFromCookies } from '@/lib/session';
-import { roleCookieName, sessionCookieName, studentCookieName, teacherSessionCookieName } from '@/lib/auth';
+import { studentCookieName, teacherSessionCookieName } from '@/lib/auth';
 
 export async function POST() {
   try {
@@ -65,7 +65,7 @@ export async function POST() {
       studentId = student.id;
     }
 
-    // Create response with student cookies
+    // Keep the teacher as a teacher. Only attach a preview student identity.
     const response = NextResponse.json({
       success: true,
       sessionId: session.id,
@@ -81,19 +81,6 @@ export async function POST() {
       maxAge: 60 * 60 * 6, // 6 hours
     });
 
-    // Set student cookies
-    response.cookies.set(sessionCookieName, session.id, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 6,
-    });
-    response.cookies.set(roleCookieName, 'student', {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 6,
-    });
     response.cookies.set(studentCookieName, studentId, {
       httpOnly: true,
       sameSite: 'lax',

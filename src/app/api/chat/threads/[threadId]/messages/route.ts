@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { getSessionFromCookies, requireActiveStudent } from '@/lib/session';
+import { getStudentAccessFromCookies, requireActiveStudent } from '@/lib/session';
 
 const messageSchema = z.object({
   content: z.string().trim().min(1, 'Message cannot be empty').max(4000, 'Message is too long'),
@@ -152,11 +152,13 @@ export async function GET(_: Request, context: unknown) {
   const extracted = context as { params: { threadId: string } | Promise<{ threadId: string }> };
   const resolvedParams = await Promise.resolve(extracted.params);
   const { threadId } = resolvedParams;
-  const { sessionId, role, studentId } = await getSessionFromCookies();
+  const studentAccess = await getStudentAccessFromCookies();
 
-  if (!sessionId || role !== 'student' || !studentId) {
+  if (!studentAccess) {
     return NextResponse.json({ message: 'Student access required.' }, { status: 403 });
   }
+
+  const { sessionId, studentId } = studentAccess;
 
   const studentStatus = await requireActiveStudent(sessionId, studentId);
   if (!studentStatus.active) {
@@ -225,11 +227,13 @@ export async function POST(request: Request, context: unknown) {
   const { threadId } = resolvedParams;
 
   try {
-    const { sessionId, role, studentId } = await getSessionFromCookies();
+    const studentAccess = await getStudentAccessFromCookies();
 
-    if (!sessionId || role !== 'student' || !studentId) {
+    if (!studentAccess) {
       return NextResponse.json({ message: 'Student access required.' }, { status: 403 });
     }
+
+    const { sessionId, studentId } = studentAccess;
 
     const studentStatus = await requireActiveStudent(sessionId, studentId);
     if (!studentStatus.active) {

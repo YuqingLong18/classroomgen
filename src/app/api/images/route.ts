@@ -29,7 +29,9 @@ export async function GET(request: NextRequest) {
 
   const maxEdits = session.maxStudentEdits ?? 3;
 
-  if (role === 'student') {
+  const hasStudentContext = Boolean(studentId);
+
+  if (hasStudentContext) {
     if (!studentId) {
       return NextResponse.json(
         { submissions: [], nextCursor: null, message: 'Student access required.' },
@@ -46,7 +48,7 @@ export async function GET(request: NextRequest) {
   }
 
   const where: Prisma.PromptSubmissionWhereInput = { sessionId };
-  if (role !== 'teacher') {
+  if (hasStudentContext) {
     // Students can see:
     // 1. Their own submissions (including PENDING ones)
     // 2. Shared submissions that are SUCCESS
