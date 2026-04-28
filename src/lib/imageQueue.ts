@@ -7,6 +7,7 @@
 import { Buffer } from 'node:buffer';
 import { prisma } from '@/lib/prisma';
 import { SubmissionStatus, ImageJob } from '@prisma/client';
+import type { TeacherApiKeyDetails } from '@/lib/teacherApiKey';
 
 type CallOptions = {
   baseImageDataUrl?: string; // Legacy support or single image
@@ -141,15 +142,15 @@ class ImageGenerationQueue {
         options.referenceImages = hydratedImages;
       }
 
-      // Get teacher API key if teacherId is provided
-      let teacherApiKey: string | null = null;
+      // Get teacher AI service settings if teacherId is provided
+      let teacherAiService: TeacherApiKeyDetails | null = null;
       if (teacherId) {
-        const { getTeacherApiKey } = await import('@/lib/teacherApiKey');
-        teacherApiKey = await getTeacherApiKey(teacherId);
+        const { getTeacherApiKeyDetails } = await import('@/lib/teacherApiKey');
+        teacherAiService = await getTeacherApiKeyDetails(teacherId);
       }
 
       console.log(`[Queue ${this.loopId}] Calling image generation API for job ${jobRecord.id}`);
-      const { imageData, mimeType } = await callImageGeneration(prompt, options, teacherApiKey);
+      const { imageData, mimeType } = await callImageGeneration(prompt, options, teacherAiService);
       console.log(`[Queue ${this.loopId}] API success for job ${jobRecord.id}`);
 
       // Fetch metadata for file organization
@@ -271,13 +272,18 @@ async function getFetchAgent() {
 // Import the callVolcengine function from the generate route
 // We'll need to extract it to a shared module
 // Shared function for image generation
-async function callImageGeneration(prompt: string, options: CallOptions = {}, teacherApiKey: string | null = null) {
-  const openRouterKey = process.env.OPENROUTER_API_KEY;
+async function callImageGeneration(prompt: string, options: CallOptions = {}, teacherAiService: TeacherApiKeyDetails | null = null) {
+  const provider = teacherAiService?.provider ?? (process.env.OPENROUTER_API_KEY?.trim() ? 'OPENROUTER' : 'VOLCENGINE');
   const agent = await getFetchAgent();
 
-  if (openRouterKey) {
+  if (provider === 'OPENROUTER') {
+    const apiKey = teacherAiService?.apiKey ?? process.env.OPENROUTER_API_KEY?.trim();
+    if (!apiKey) {
+      throw new Error('Missing OpenRouter API key. Please paste your OpenRouter API key in the teacher dashboard.');
+    }
+
     // OpenRouter Implementation
-    const model = process.env.OPENROUTER_IMAGE_MODEL || 'google/gemini-2.0-flash-exp:free';
+    const model = process.env.OPENROUTER_IMAGE_MODEL || process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-exp:free';
     const CHAT_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
 
     // Map size to aspect ratio for Gemini models
@@ -324,7 +330,7 @@ async function callImageGeneration(prompt: string, options: CallOptions = {}, te
       const response = await fetch(CHAT_ENDPOINT, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${openRouterKey}`,
+          Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
           'HTTP-Referer': 'https://classroomgen.vercel.app',
           'X-Title': 'ClassroomGen',
@@ -395,7 +401,7 @@ async function callImageGeneration(prompt: string, options: CallOptions = {}, te
 
   // Volcengine Implementation (Fallback)
   // Use teacher's API key if provided, otherwise fall back to environment variable
-  const apiKey = teacherApiKey || process.env.VOLCENGINE_API_KEY;
+  const apiKey = teacherAiService?.apiKey || process.env.VOLCENGINE_API_KEY;
   if (!apiKey) {
     throw new Error('Missing API key. Please configure your Volcengine API KEY in the teacher dashboard.');
   }

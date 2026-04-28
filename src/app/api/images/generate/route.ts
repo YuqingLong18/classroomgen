@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { getStudentAccessFromCookies, requireActiveStudent } from '@/lib/session';
 import { SubmissionStatus } from '@prisma/client';
 import { enqueueImageGeneration } from '@/lib/imageQueue';
+import type { TeacherApiKeyDetails } from '@/lib/teacherApiKey';
 
 const bodySchema = z.object({
   prompt: z.string().min(5, 'Please write a longer prompt to help the AI.'),
@@ -50,16 +51,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'Session expired. Please ask the teacher to restart.' }, { status: 403 });
     }
 
-    // Get teacher API key for content filter
-    let teacherApiKey: string | null = null;
+    // Get teacher AI service settings for content filter
+    let teacherAiService: TeacherApiKeyDetails | null = null;
     if (session.teacherId) {
-      const { getTeacherApiKey } = await import('@/lib/teacherApiKey');
-      teacherApiKey = await getTeacherApiKey(session.teacherId);
+      const { getTeacherApiKeyDetails } = await import('@/lib/teacherApiKey');
+      teacherAiService = await getTeacherApiKeyDetails(session.teacherId);
     }
 
     // Security Check: Content Filter
     const { contentFilter } = await import('@/lib/contentFilter');
-    const filterResult = await contentFilter.check(prompt, teacherApiKey);
+    const filterResult = await contentFilter.check(prompt, teacherAiService);
 
     if (!filterResult.allowed) {
       return NextResponse.json(

@@ -1,43 +1,62 @@
+import type { AiProvider, TeacherApiKeyDetails } from '@/lib/teacherApiKey';
 
+type ProviderConfig = {
+    provider: AiProvider;
+    apiKey: string;
+    model: string;
+    endpoint: string;
+};
 
 export class ContentFilter {
-    private apiKey: string;
-    private model: string;
-    private endpoint: string;
+    private getConfig(service?: TeacherApiKeyDetails | null): ProviderConfig | null {
+        const provider = service?.provider ?? (process.env.OPENROUTER_API_KEY?.trim() ? 'OPENROUTER' : 'VOLCENGINE');
 
-    constructor() {
-        const openRouterKey = process.env.OPENROUTER_API_KEY;
-        if (openRouterKey) {
-            this.apiKey = openRouterKey;
-            this.model = process.env.OPENROUTER_MODERATION_MODEL || 'omni-moderation-latest';
-            this.endpoint = 'https://openrouter.ai/api/v1/chat/completions';
-        } else {
-            this.apiKey = process.env.VOLCENGINE_API_KEY || '';
-            this.model = process.env.VOLCENGINE_MODERATION_MODEL || 'ep-20241209124426-moderation';
-            this.endpoint = 'https://ark.cn-beijing.volces.com/api/v3/chat/completions';
+        if (provider === 'OPENROUTER') {
+            const apiKey = service?.apiKey ?? process.env.OPENROUTER_API_KEY?.trim() ?? '';
+            if (!apiKey) {
+                return null;
+            }
+
+            return {
+                provider,
+                apiKey,
+                model: process.env.OPENROUTER_MODERATION_MODEL || process.env.OPENROUTER_MODEL || 'omni-moderation-latest',
+                endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+            };
         }
+
+        const apiKey = service?.apiKey ?? process.env.VOLCENGINE_API_KEY?.trim() ?? '';
+        if (!apiKey) {
+            return null;
+        }
+
+        return {
+            provider,
+            apiKey,
+            model: process.env.VOLCENGINE_MODERATION_MODEL || 'ep-20241209124426-moderation',
+            endpoint: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
+        };
     }
 
-    async check(content: string, teacherApiKey?: string | null): Promise<{ allowed: boolean; reason?: string }> {
-        // Use teacher API key if provided, otherwise use instance API key
-        const apiKey = teacherApiKey || this.apiKey;
+    async check(content: string, service?: TeacherApiKeyDetails | null): Promise<{ allowed: boolean; reason?: string }> {
+        const config = this.getConfig(service);
         
-        if (!apiKey) {
+        if (!config) {
             console.warn('ContentFilter: Missing API key, skipping check (defaulting to allow)');
             return { allowed: true };
         }
 
         try {
-            const response = await fetch(this.endpoint, {
+            const response = await fetch(config.endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`,
+                    'Authorization': `Bearer ${config.apiKey}`,
                     'HTTP-Referer': 'https://classroomgen.vercel.app',
                     'X-Title': 'ClassroomGen',
                 },
                 body: JSON.stringify({
-                    model: this.model,
+                    model: config.model,
                     messages: [
                         {
                             role: 'system',
@@ -83,6 +102,7 @@ export class ContentFilter {
 
             console.log('--- Content Security Check ---');
             console.log('Input:', content);
+            console.log('Provider:', config.provider);
             console.log('Filter Response:', result);
             console.log('------------------------------');
 

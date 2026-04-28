@@ -4,10 +4,24 @@ import { prisma } from '@/lib/prisma';
 import { verifyTeacherAccess } from '@/lib/session';
 import { encryptApiKey } from '@/lib/apiKeyEncryption';
 import { getTeacherApiKeyDetails } from '@/lib/teacherApiKey';
+import type { AiProvider, TeacherApiKeyDetails } from '@/lib/teacherApiKey';
 
 const bodySchema = z.object({
-  apiKey: z.string().trim().min(1, 'API key is required'),
+  provider: z.enum(['VOLCENGINE', 'OPENROUTER']).optional(),
+  apiKey: z.string().trim().min(1, 'API key is required').max(4096, 'API key is too long').optional(),
 });
+
+function serializeApiKeyStatus(details: TeacherApiKeyDetails) {
+  return {
+    provider: details.provider,
+    hasApiKey: details.hasApiKey,
+    managedByEnv: details.managedByEnv,
+    hasVolcengineApiKey: details.hasVolcengineApiKey,
+    hasOpenRouterApiKey: details.hasOpenRouterApiKey,
+    volcengineManagedByEnv: details.volcengineManagedByEnv,
+    openRouterManagedByEnv: details.openRouterManagedByEnv,
+  };
+}
 
 export async function GET() {
   try {
@@ -33,10 +47,7 @@ export async function GET() {
       return NextResponse.json({ message: 'Teacher not found.' }, { status: 404 });
     }
 
-    return NextResponse.json({
-      hasApiKey: details.hasApiKey,
-      managedByEnv: details.managedByEnv,
-    });
+    return NextResponse.json(serializeApiKeyStatus(details));
   } catch (error) {
     console.error('Failed to get API key status', error);
     return NextResponse.json(
@@ -54,7 +65,7 @@ export async function POST(request: Request) {
     }
 
     const json = await request.json();
-    const { apiKey } = bodySchema.parse(json);
+    const { provider = 'VOLCENGINE', apiKey } = bodySchema.parse(json);
 
     // Get teacher from session
     const session = await prisma.session.findUnique({
@@ -69,29 +80,52 @@ export async function POST(request: Request) {
     }
 
     const details = await getTeacherApiKeyDetails(session.teacherId);
-    if (details.managedByEnv) {
+    const data: {
+      aiProvider: AiProvider;
+      apiKeyEncrypted?: string;
+      openRouterApiKeyEncrypted?: string;
+    } = {
+      aiProvider: provider,
+    };
+
+    if (provider === 'VOLCENGINE' && details.volcengineManagedByEnv && apiKey) {
       return NextResponse.json(
         { message: 'Microsoft SSO teachers use the school-managed API key from the server configuration.' },
         { status: 403 }
       );
     }
 
-    // Encrypt the API key before storing
-    const encryptedApiKey = encryptApiKey(apiKey.trim());
+    if (apiKey) {
+      const encryptedApiKey = encryptApiKey(apiKey.trim());
+      if (provider === 'OPENROUTER') {
+        data.openRouterApiKeyEncrypted = encryptedApiKey;
+      } else {
+        data.apiKeyEncrypted = encryptedApiKey;
+      }
+    } else if (provider === 'OPENROUTER' && !details.hasOpenRouterApiKey) {
+      return NextResponse.json(
+        { message: 'OpenRouter API key is required before enabling OpenRouter.' },
+        { status: 400 }
+      );
+    } else if (provider === 'VOLCENGINE' && !details.hasVolcengineApiKey) {
+      return NextResponse.json(
+        { message: 'Volcengine API key is required before enabling Volcengine.' },
+        { status: 400 }
+      );
+    }
 
-    // Update teacher with encrypted API key
     await prisma.teacher.update({
       where: { id: session.teacherId },
-      data: {
-        apiKeyEncrypted: encryptedApiKey,
-      },
+      data,
     });
 
-    console.log(`Teacher ${session.teacherId} updated API key`);
+    console.log(`Teacher ${session.teacherId} updated AI provider settings (${provider})`);
+    const updatedDetails = await getTeacherApiKeyDetails(session.teacherId);
 
     return NextResponse.json({
       success: true,
       message: 'API key saved successfully.',
+      ...serializeApiKeyStatus(updatedDetails),
     });
   } catch (error) {
     console.error('Failed to save API key', error);

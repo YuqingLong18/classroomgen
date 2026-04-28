@@ -110,6 +110,17 @@ interface SessionStudent {
   createdAt: string;
 }
 
+type AiProvider = 'VOLCENGINE' | 'OPENROUTER';
+
+const providerLabels: Record<AiProvider, string> = {
+  VOLCENGINE: 'Volcengine',
+  OPENROUTER: 'OpenRouter',
+};
+
+function normalizeProvider(value: unknown): AiProvider {
+  return value === 'OPENROUTER' ? 'OPENROUTER' : 'VOLCENGINE';
+}
+
 const timestampFormatter = new Intl.DateTimeFormat('en-US', {
   dateStyle: 'medium',
   timeStyle: 'short',
@@ -166,9 +177,12 @@ function TeacherDashboardContent() {
   const [settingsNotice, setSettingsNotice] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [selectedImage, setSelectedImage] = useState<{ src: string; prompt: string; mimeType: string | null } | null>(null);
-  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
-  const [apiKeyManagedByEnv, setApiKeyManagedByEnv] = useState(false);
-  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+  const [activeApiProvider, setActiveApiProvider] = useState<AiProvider>('VOLCENGINE');
+  const [hasVolcengineApiKey, setHasVolcengineApiKey] = useState<boolean | null>(null);
+  const [hasOpenRouterApiKey, setHasOpenRouterApiKey] = useState<boolean | null>(null);
+  const [volcengineManagedByEnv, setVolcengineManagedByEnv] = useState(false);
+  const [openRouterManagedByEnv, setOpenRouterManagedByEnv] = useState(false);
+  const [apiKeyInputProvider, setApiKeyInputProvider] = useState<AiProvider | null>(null);
   const [apiKeyValue, setApiKeyValue] = useState('');
   const [apiKeySaving, setApiKeySaving] = useState(false);
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
@@ -456,6 +470,23 @@ function TeacherDashboardContent() {
     }
   }, [session?.id, session?.role, loadActivity]);
 
+  const applyApiKeyStatus = useCallback((data: {
+    provider?: unknown;
+    hasApiKey?: boolean;
+    managedByEnv?: boolean;
+    hasVolcengineApiKey?: boolean;
+    hasOpenRouterApiKey?: boolean;
+    volcengineManagedByEnv?: boolean;
+    openRouterManagedByEnv?: boolean;
+  }) => {
+    const provider = normalizeProvider(data.provider);
+    setActiveApiProvider(provider);
+    setHasVolcengineApiKey(data.hasVolcengineApiKey ?? (provider === 'VOLCENGINE' ? data.hasApiKey ?? false : false));
+    setHasOpenRouterApiKey(data.hasOpenRouterApiKey ?? (provider === 'OPENROUTER' ? data.hasApiKey ?? false : false));
+    setVolcengineManagedByEnv(data.volcengineManagedByEnv ?? (provider === 'VOLCENGINE' ? data.managedByEnv ?? false : false));
+    setOpenRouterManagedByEnv(data.openRouterManagedByEnv ?? (provider === 'OPENROUTER' ? data.managedByEnv ?? false : false));
+  }, []);
+
   const loadApiKeyStatus = useCallback(async () => {
     if (!session || session.role !== 'teacher') {
       return;
@@ -464,13 +495,12 @@ function TeacherDashboardContent() {
       const res = await fetch('/api/teacher/api-key', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
-        setHasApiKey(data.hasApiKey ?? false);
-        setApiKeyManagedByEnv(data.managedByEnv ?? false);
+        applyApiKeyStatus(data);
       }
     } catch (error) {
       console.error('Failed to load API key status', error);
     }
-  }, [session]);
+  }, [applyApiKeyStatus, session]);
 
   useEffect(() => {
     if (session?.role === 'teacher') {
@@ -478,17 +508,7 @@ function TeacherDashboardContent() {
     }
   }, [session?.role, loadApiKeyStatus]);
 
-  const handleSaveApiKey = useCallback(async () => {
-    if (!apiKeyValue.trim()) {
-      setApiKeyError('API key cannot be empty');
-      return;
-    }
-
-    if (apiKeyManagedByEnv) {
-      setApiKeyError(t.teacher.apiKeyManagedBySchool);
-      return;
-    }
-
+  const saveApiProvider = useCallback(async (provider: AiProvider, apiKey?: string) => {
     setApiKeySaving(true);
     setApiKeyError(null);
     try {
@@ -496,26 +516,68 @@ function TeacherDashboardContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ apiKey: apiKeyValue.trim() }),
+        body: JSON.stringify({
+          provider,
+          ...(apiKey ? { apiKey } : {}),
+        }),
       });
 
+      const data = await res.json().catch(() => ({ message: 'Failed to save API key.' }));
+
       if (!res.ok) {
-        const error = await res.json().catch(() => ({ message: 'Failed to save API key.' }));
-        setApiKeyError(error.message ?? 'Failed to save API key.');
-        return;
+        setApiKeyError(data.message ?? 'Failed to save API key.');
+        return false;
       }
 
-      setHasApiKey(true);
-      setShowApiKeyInput(false);
+      applyApiKeyStatus(data);
+      setApiKeyInputProvider(null);
       setApiKeyValue('');
       setApiKeyError(null);
+      return true;
     } catch (error) {
       console.error('Failed to save API key', error);
       setApiKeyError('Failed to save API key.');
+      return false;
     } finally {
       setApiKeySaving(false);
     }
-  }, [apiKeyManagedByEnv, apiKeyValue, t.teacher.apiKeyManagedBySchool]);
+  }, [applyApiKeyStatus]);
+
+  const handleUseApiProvider = useCallback(async (provider: AiProvider) => {
+    const hasProviderKey = provider === 'OPENROUTER'
+      ? Boolean(hasOpenRouterApiKey)
+      : Boolean(hasVolcengineApiKey);
+
+    if (!hasProviderKey) {
+      setApiKeyInputProvider(provider);
+      setApiKeyValue('');
+      setApiKeyError(null);
+      return;
+    }
+
+    if (provider === activeApiProvider) {
+      return;
+    }
+
+    await saveApiProvider(provider);
+  }, [activeApiProvider, hasOpenRouterApiKey, hasVolcengineApiKey, saveApiProvider]);
+
+  const handleSaveApiKey = useCallback(async () => {
+    const provider = apiKeyInputProvider ?? activeApiProvider;
+    const trimmedApiKey = apiKeyValue.trim();
+
+    if (!trimmedApiKey) {
+      setApiKeyError(t.teacher.apiKeyRequired);
+      return;
+    }
+
+    if (provider === 'VOLCENGINE' && volcengineManagedByEnv) {
+      setApiKeyError(t.teacher.apiKeyManagedBySchool);
+      return;
+    }
+
+    await saveApiProvider(provider, trimmedApiKey);
+  }, [activeApiProvider, apiKeyInputProvider, apiKeyValue, saveApiProvider, t.teacher.apiKeyManagedBySchool, t.teacher.apiKeyRequired, volcengineManagedByEnv]);
 
   useEffect(() => {
     if (session?.role === 'teacher') {
@@ -1026,78 +1088,143 @@ function TeacherDashboardContent() {
     : Number.isNaN(maxEditsDraft)
       ? 3
       : maxEditsDraft;
+  const apiKeyInputTitle = apiKeyInputProvider === 'OPENROUTER'
+    ? t.teacher.openRouterApiKeyTitle
+    : t.teacher.volcengineApiKeyTitle;
+  const openRouterReady = Boolean(hasOpenRouterApiKey);
+  const volcengineReady = Boolean(hasVolcengineApiKey);
+  const activeProviderReady = activeApiProvider === 'OPENROUTER' ? openRouterReady : volcengineReady;
 
   return (
     <main className="min-h-screen bg-white text-gray-900">
       <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
         {/* API Key Configuration Section - At the very top */}
         {session && session.role === 'teacher' && (
-          <section className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            {apiKeyManagedByEnv ? (
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-gray-700">{t.teacher.apiKeyTitle}:</span>
-                  <span className="text-sm text-green-700 font-medium">{t.teacher.apiKeyManagedBySchool}</span>
-                </div>
+          <section className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="text-sm font-semibold text-gray-800">{t.teacher.aiServiceTitle}</span>
+                <span className={activeProviderReady ? 'text-sm font-medium text-green-700' : 'text-sm font-medium text-orange-700'}>
+                  {t.teacher.aiServiceActive.replace('{provider}', providerLabels[activeApiProvider])}
+                </span>
               </div>
-            ) : !showApiKeyInput ? (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-gray-700">{t.teacher.apiKeyTitle}:</span>
-                  {hasApiKey ? (
-                    <span className="text-sm text-green-700 font-medium">{t.teacher.apiKeyConfigured}</span>
-                  ) : (
-                    <span className="text-sm text-orange-700 font-medium">Not configured</span>
-                  )}
-                </div>
-                <button
-                  onClick={() => {
-                    setShowApiKeyInput(true);
-                    setApiKeyValue('');
-                    setApiKeyError(null);
-                  }}
-                  className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition"
-                >
-                  {hasApiKey ? t.teacher.useNewKey : t.teacher.saveApiKey}
-                </button>
+              <div className="inline-flex w-full overflow-hidden rounded-lg border border-slate-300 bg-white p-1 shadow-sm sm:w-auto">
+                {(['VOLCENGINE', 'OPENROUTER'] as AiProvider[]).map((provider) => {
+                  const active = activeApiProvider === provider;
+                  return (
+                    <button
+                      key={provider}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => void handleUseApiProvider(provider)}
+                      disabled={apiKeySaving}
+                      className={`flex-1 whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium transition sm:flex-none ${active
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-gray-700 hover:bg-slate-100 disabled:text-gray-400'
+                        }`}
+                    >
+                      {provider === 'OPENROUTER' ? t.teacher.useOpenRouter : t.teacher.useVolcengine}
+                    </button>
+                  );
+                })}
               </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700 flex-shrink-0">{t.teacher.apiKeyTitle}:</label>
+            </div>
+
+            <div className="flex flex-col gap-2 text-sm text-gray-700 md:flex-row md:flex-wrap md:items-center md:gap-x-5">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">{t.teacher.volcengineApiKeyTitle}:</span>
+                <span className={volcengineReady ? 'font-medium text-green-700' : 'font-medium text-orange-700'}>
+                  {volcengineManagedByEnv
+                    ? t.teacher.apiKeyManagedBySchool
+                    : volcengineReady
+                      ? t.teacher.apiKeyConfigured
+                      : t.teacher.apiKeyNotConfigured}
+                </span>
+                {!volcengineManagedByEnv ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setApiKeyInputProvider('VOLCENGINE');
+                      setApiKeyValue('');
+                      setApiKeyError(null);
+                    }}
+                    className="text-blue-700 hover:text-blue-800 font-medium"
+                  >
+                    {volcengineReady ? t.teacher.useNewKey : t.teacher.saveApiKey}
+                  </button>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-medium">{t.teacher.openRouterApiKeyTitle}:</span>
+                <span className={openRouterReady ? 'font-medium text-green-700' : 'font-medium text-orange-700'}>
+                  {openRouterManagedByEnv
+                    ? t.teacher.apiKeyManagedBySchool
+                    : openRouterReady
+                      ? t.teacher.apiKeyConfigured
+                      : t.teacher.apiKeyNotConfigured}
+                </span>
+                {!openRouterManagedByEnv ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setApiKeyInputProvider('OPENROUTER');
+                      setApiKeyValue('');
+                      setApiKeyError(null);
+                    }}
+                    className="text-blue-700 hover:text-blue-800 font-medium"
+                  >
+                    {openRouterReady ? t.teacher.useNewKey : t.teacher.saveOpenRouterKey}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            {apiKeyInputProvider ? (
+              <div className="space-y-2 rounded-md border border-slate-200 bg-white p-3">
+                <div className="flex flex-col gap-2 md:flex-row md:items-center">
+                  <label className="text-sm font-medium text-gray-700 md:w-44 md:flex-shrink-0">{apiKeyInputTitle}:</label>
                   <input
                     type="password"
+                    autoComplete="off"
+                    spellCheck={false}
                     value={apiKeyValue}
                     onChange={(e) => {
                       setApiKeyValue(e.target.value);
                       setApiKeyError(null);
                     }}
-                    placeholder={t.teacher.apiKeyPlaceholder}
-                    className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                    placeholder={apiKeyInputProvider === 'OPENROUTER' ? t.teacher.openRouterApiKeyPlaceholder : t.teacher.volcengineApiKeyPlaceholder}
+                    className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
                   />
-                  <button
-                    onClick={handleSaveApiKey}
-                    disabled={apiKeySaving || !apiKeyValue.trim()}
-                    className="text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:text-gray-500 text-white px-4 py-2 rounded-lg transition"
-                  >
-                    {apiKeySaving ? t.teacher.savingApiKey : t.teacher.saveApiKey}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowApiKeyInput(false);
-                      setApiKeyValue('');
-                      setApiKeyError(null);
-                    }}
-                    className="text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg transition"
-                  >
-                    {t.common.cancel}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveApiKey}
+                      disabled={apiKeySaving || !apiKeyValue.trim()}
+                      className="text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:text-gray-500 text-white px-4 py-2 rounded-lg transition"
+                    >
+                      {apiKeySaving ? t.teacher.savingApiKey : t.teacher.saveApiKey}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setApiKeyInputProvider(null);
+                        setApiKeyValue('');
+                        setApiKeyError(null);
+                      }}
+                      className="text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg transition"
+                    >
+                      {t.common.cancel}
+                    </button>
+                  </div>
                 </div>
+                <p className="text-xs text-gray-500">{t.teacher.apiKeySecurityNote}</p>
                 {apiKeyError && (
                   <p className="text-sm text-red-600">{apiKeyError}</p>
                 )}
               </div>
-            )}
+            ) : apiKeyError ? (
+              <p className="text-sm text-red-600">{apiKeyError}</p>
+            ) : null}
           </section>
         )}
 

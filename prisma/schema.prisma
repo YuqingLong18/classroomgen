@@ -29,15 +29,22 @@ enum StudentStatus {
   REMOVED
 }
 
+enum AiProvider {
+  VOLCENGINE
+  OPENROUTER
+}
+
 model Teacher {
-  id           String    @id @default(cuid())
-  username     String    @unique
-  email        String?   @unique
-  passwordHash String
-  displayName  String?
-  apiKeyEncrypted String? // Encrypted Volcengine API key
-  createdAt    DateTime  @default(now())
-  sessions     Session[]
+  id                        String      @id @default(cuid())
+  username                  String      @unique
+  email                     String?     @unique
+  passwordHash              String
+  displayName               String?
+  apiKeyEncrypted           String?     // Encrypted Volcengine API key
+  openRouterApiKeyEncrypted String?     // Encrypted OpenRouter API key
+  aiProvider                AiProvider?
+  createdAt                 DateTime    @default(now())
+  sessions                  Session[]
 }
 
 model Session {

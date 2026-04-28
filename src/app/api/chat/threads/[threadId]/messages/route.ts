@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { getStudentAccessFromCookies, requireActiveStudent } from '@/lib/session';
+import type { TeacherApiKeyDetails } from '@/lib/teacherApiKey';
 
 const messageSchema = z.object({
   content: z.string().trim().min(1, 'Message cannot be empty').max(4000, 'Message is too long'),
@@ -51,18 +52,23 @@ function extractTextFromChoiceMessage(message: unknown) {
   return null;
 }
 
-async function callChatCompletion(history: Array<{ sender: 'STUDENT' | 'AI'; content: string }>, teacherApiKey: string | null = null) {
-  const openRouterKey = process.env.OPENROUTER_API_KEY;
+async function callChatCompletion(history: Array<{ sender: 'STUDENT' | 'AI'; content: string }>, teacherAiService: TeacherApiKeyDetails | null = null) {
+  const provider = teacherAiService?.provider ?? (process.env.OPENROUTER_API_KEY?.trim() ? 'OPENROUTER' : 'VOLCENGINE');
 
-  if (openRouterKey) {
+  if (provider === 'OPENROUTER') {
+    const apiKey = teacherAiService?.apiKey ?? process.env.OPENROUTER_API_KEY?.trim();
+    if (!apiKey) {
+      throw new Error('Missing OpenRouter API key. Please paste your OpenRouter API key in the teacher dashboard.');
+    }
+
     // OpenRouter Implementation
-    const model = process.env.OPENROUTER_CHAT_MODEL || 'google/gemini-2.0-flash-exp:free';
+    const model = process.env.OPENROUTER_CHAT_MODEL || process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-exp:free';
     const CHAT_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
 
     const response = await fetch(CHAT_ENDPOINT, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${openRouterKey}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://classroomgen.vercel.app', // Replace with actual site URL
         'X-Title': 'ClassroomGen',
@@ -103,7 +109,7 @@ async function callChatCompletion(history: Array<{ sender: 'STUDENT' | 'AI'; con
 
   // Volcengine Implementation (Fallback)
   // Use teacher's API key if provided, otherwise fall back to environment variable
-  const apiKey = teacherApiKey || process.env.VOLCENGINE_API_KEY;
+  const apiKey = teacherAiService?.apiKey || process.env.VOLCENGINE_API_KEY;
   if (!apiKey) {
     throw new Error('Missing API key. Please configure your Volcengine API KEY in the teacher dashboard.');
   }
@@ -281,16 +287,16 @@ export async function POST(request: Request, context: unknown) {
       // In production, you might want to reject the request entirely
     }
 
-    // Get teacher API key for content filter
-    let teacherApiKeyForFilter: string | null = null;
+    // Get teacher AI service settings for content filter and chat completion
+    let teacherAiService: TeacherApiKeyDetails | null = null;
     if (session.teacherId) {
-      const { getTeacherApiKey } = await import('@/lib/teacherApiKey');
-      teacherApiKeyForFilter = await getTeacherApiKey(session.teacherId);
+      const { getTeacherApiKeyDetails } = await import('@/lib/teacherApiKey');
+      teacherAiService = await getTeacherApiKeyDetails(session.teacherId);
     }
 
     // Security Check
     const { contentFilter } = await import('@/lib/contentFilter');
-    const filterResult = await contentFilter.check(content, teacherApiKeyForFilter);
+    const filterResult = await contentFilter.check(content, teacherAiService);
 
     if (!filterResult.allowed) {
       return NextResponse.json(
@@ -317,19 +323,12 @@ export async function POST(request: Request, context: unknown) {
 
     const orderedHistory = history.reverse();
 
-    // Get teacher API key if available
-    let teacherApiKey: string | null = null;
-    if (session.teacherId) {
-      const { getTeacherApiKey } = await import('@/lib/teacherApiKey');
-      teacherApiKey = await getTeacherApiKey(session.teacherId);
-    }
-
     const aiResponseText = await callChatCompletion(
       orderedHistory.map((message) => ({
         sender: message.sender,
         content: message.content,
       })),
-      teacherApiKey
+      teacherAiService
     );
 
     const aiMessage = await prisma.chatMessage.create({
